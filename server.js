@@ -5,6 +5,8 @@ import connectDB from './configs/db.js';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import leadRoutes from './routes/leadRoutes.js';
+import whatsappRoutes from './routes/whatsappRoutes.js';
+import websiteRoutes from './routes/websiteRoutes.js';
 
 dotenv.config();
 
@@ -22,6 +24,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/leads', leadRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/website', websiteRoutes);
 
 // Base route
 app.get('/', (req, res) => {
