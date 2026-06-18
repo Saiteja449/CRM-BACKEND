@@ -21,9 +21,7 @@ const leadSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
-  stage: {
-    type: String,
-  },
+
   assignedTo: {
     type: String,
     default: "Unassigned",

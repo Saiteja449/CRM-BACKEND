@@ -3,7 +3,8 @@ import {
   getLeads, 
   createLead, 
   updateLead, 
-  deleteLead 
+  deleteLead,
+  receiveWebsiteLead
 } from '../controllers/leadController.js';
 
 const router = express.Router();
@@ -11,6 +12,9 @@ const router = express.Router();
 router.route('/')
   .get(getLeads)
   .post(createLead);
+
+// Website form submission endpoint
+router.post('/website', receiveWebsiteLead);
 
 router.route('/:id')
   .put(updateLead)
