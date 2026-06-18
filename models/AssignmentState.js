@@ -1,16 +1,19 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
 const assignmentStateSchema = new mongoose.Schema({
-  key: { 
-    type: String, 
-    unique: true, 
-    default: 'leadAssignment' 
+  key: {
+    type: String,
+    unique: true,
+    default: "leadAssignment",
   },
-  lastAssignedIndex: { 
-    type: Number, 
-    default: 0 
-  }
+  lastAssignedIndex: {
+    type: Number,
+    default: 0,
+  },
 });
 
-const AssignmentState = mongoose.model('AssignmentState', assignmentStateSchema);
+const AssignmentState = mongoose.model(
+  "AssignmentState",
+  assignmentStateSchema,
+);
 export default AssignmentState;

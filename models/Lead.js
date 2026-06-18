@@ -1,102 +1,112 @@
-import mongoose from 'mongoose';
+import mongoose from "mongoose";
 
-const leadSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-  },
-  phone: {
-    type: String,
-    required: true,
-  },
-  email: {
-    type: String,
-  },
-  source: {
-    type: String,
-    enum: ["Email", "WhatsApp", "Meta Ads", "Website Form", "Call", "Manual Entry"],
-    default: "Manual Entry"
-  },
-  service: {
-    type: String,
-    required: true,
-  },
+const leadSchema = new mongoose.Schema(
+  {
+    name: {
+      type: String,
+      required: true,
+    },
+    phone: {
+      type: String,
+      required: true,
+    },
+    email: {
+      type: String,
+    },
+    source: {
+      type: String,
+      enum: [
+        "Email",
+        "WhatsApp",
+        "Meta Ads",
+        "Website Form",
+        "Call",
+        "Manual Entry",
+      ],
+      default: "Manual Entry",
+    },
+    service: {
+      type: String,
+      required: true,
+    },
 
-  assignedTo: {
-    type: String,
-    default: "Unassigned",
+    assignedTo: {
+      type: String,
+      default: "Unassigned",
+    },
+    joinedAt: {
+      type: Date,
+    },
+    status: {
+      type: String,
+      enum: [
+        "New",
+        "Follow Up",
+        "Not Interested",
+        "Not Responding",
+        "Not Answered",
+        "Price Issue",
+        "Joined",
+        "Job Posted",
+        "Job Assigned",
+        "Active",
+        "Closed Won",
+      ],
+      default: "New",
+    },
+    leadType: {
+      type: String,
+      default: "Client",
+    },
+    providerService: {
+      type: String,
+    },
+    nextFollowUp: {
+      type: String, // Kept as string to easily map to HTML date input format "YYYY-MM-DD"
+    },
+    notes: {
+      type: String,
+    },
+    city: {
+      type: String,
+    },
+    preferredContactMethod: {
+      type: String,
+      enum: ["Email", "SMS", "WhatsApp", "Phone", ""],
+      default: "",
+    },
+    petName: {
+      type: String,
+    },
+    petBreed: {
+      type: String,
+    },
+    petAge: {
+      type: String,
+    },
+    importantLead: {
+      type: Boolean,
+      default: false,
+    },
+    appointmentDate: {
+      type: String,
+    },
+    appointmentTime: {
+      type: String,
+    },
   },
-  joinedAt: {
-    type: Date,
-  },
-  status: {
-    type: String,
-    enum: [
-      "New", 
-      "Follow Up", 
-      "Not Interested", 
-      "Not Responding", 
-      "Not Answered", 
-      "Price Issue", 
-      "Joined", 
-      "Job Posted", 
-      "Job Assigned", 
-      "Active", 
-      "Closed Won"
-    ],
-    default: "New",
-  },
-  leadType: {
-    type: String,
-    default: "Client",
-  },
-  providerService: {
-    type: String,
-  },
-  nextFollowUp: {
-    type: String, // Kept as string to easily map to HTML date input format "YYYY-MM-DD"
-  },
-  notes: {
-    type: String,
-  },
-  city: {
-    type: String,
-  },
-  preferredContactMethod: {
-    type: String,
-    enum: ["Email", "SMS", "WhatsApp", "Phone", ""],
-    default: ""
-  },
-  petName: {
-    type: String,
-  },
-  petBreed: {
-    type: String,
-  },
-  petAge: {
-    type: String,
-  },
-  importantLead: {
-    type: Boolean,
-    default: false,
-  },
-  appointmentDate: {
-    type: String,
-  },
-  appointmentTime: {
-    type: String,
-  }
-}, { timestamps: true });
+  { timestamps: true },
+);
 
 // Convert _id to id for frontend compatibility
-leadSchema.set('toJSON', {
+leadSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
   transform: function (doc, ret) {
     ret.id = ret._id.toString();
     delete ret._id;
-  }
+  },
 });
 
-const Lead = mongoose.model('Lead', leadSchema);
+const Lead = mongoose.model("Lead", leadSchema);
 export default Lead;
