@@ -17,6 +17,15 @@ export const createLead = async (req, res) => {
   try {
     const leadData = req.body;
 
+    if (leadData.phone) {
+      const existingLead = await Lead.findOne({ phone: leadData.phone });
+      if (existingLead) {
+        return res
+          .status(400)
+          .json({ message: "A lead with this phone number already exists." });
+      }
+    }
+
     if (!leadData.assignedTo || leadData.assignedTo === "Unassigned") {
       const reps = await User.find({ role: "sales person" }).sort({ _id: 1 });
       if (reps && reps.length > 0) {

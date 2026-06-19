@@ -20,6 +20,13 @@ export const receiveWebsiteLead = async (req, res) => {
       return res.status(400).json({ success: false, errors });
     }
 
+    const existingLead = await Lead.findOne({ phone: mobile });
+    if (existingLead) {
+      return res
+        .status(400)
+        .json({ message: "A lead with this phone number already exists." });
+    }
+
     const leadData = {
       name: name,
       phone: mobile,

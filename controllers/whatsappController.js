@@ -35,6 +35,14 @@ export const receiveWebhook = async (req, res) => {
         body.entry[0].changes[0].value.messages[0]
       ) {
         let from = body.entry[0].changes[0].value.messages[0].from;
+
+        const existingLead = await Lead.findOne({ phone: from });
+        if (existingLead) {
+          return res
+            .status(400)
+            .json({ message: "A lead with this phone number already exists." });
+        }
+
         let msg_body = body.entry[0].changes[0].value.messages[0].text.body;
         let contact_name =
           body.entry[0].changes[0].value.contacts?.[0]?.profile?.name ||
