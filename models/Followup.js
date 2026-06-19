@@ -12,7 +12,6 @@ const followupSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["Call", "WhatsApp", "Email", "Meeting", "Consultation"],
       default: "Call",
     },
     date: {

@@ -75,15 +75,6 @@ const leadSchema = new mongoose.Schema(
       enum: ["Email", "SMS", "WhatsApp", "Phone", ""],
       default: "",
     },
-    petName: {
-      type: String,
-    },
-    petBreed: {
-      type: String,
-    },
-    petAge: {
-      type: String,
-    },
     importantLead: {
       type: Boolean,
       default: false,

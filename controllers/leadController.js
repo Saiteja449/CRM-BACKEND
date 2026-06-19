@@ -1,6 +1,8 @@
 import Lead from "../models/Lead.js";
 import User from "../models/User.js";
 import AssignmentState from "../models/AssignmentState.js";
+import Activity from "../models/Activity.js";
+import Followup from "../models/Followup.js";
 
 export const getLeads = async (req, res) => {
   try {
@@ -73,6 +75,9 @@ export const deleteLead = async (req, res) => {
     if (!lead) {
       return res.status(404).json({ message: "Lead not found" });
     }
+
+    await Activity.deleteMany({ leadId: id });
+    await Followup.deleteMany({ leadId: id });
 
     res.json({ message: "Lead removed successfully" });
   } catch (error) {
