@@ -1,14 +1,14 @@
-import express from 'express';
-import dotenv from 'dotenv';
-import cors from 'cors';
-import connectDB from './configs/db.js';
-import authRoutes from './routes/authRoutes.js';
-import userRoutes from './routes/userRoutes.js';
-import leadRoutes from './routes/leadRoutes.js';
-import whatsappRoutes from './routes/whatsappRoutes.js';
-import websiteRoutes from './routes/websiteRoutes.js';
-import activityRoutes from './routes/activityRoutes.js';
-import followupRoutes from './routes/followupRoutes.js';
+import express from "express";
+import dotenv from "dotenv";
+import cors from "cors";
+import connectDB from "./configs/db.js";
+import authRoutes from "./routes/authRoutes.js";
+import userRoutes from "./routes/userRoutes.js";
+import leadRoutes from "./routes/leadRoutes.js";
+import whatsappRoutes from "./routes/whatsappRoutes.js";
+import websiteRoutes from "./routes/websiteRoutes.js";
+
+import followupRoutes from "./routes/followupRoutes.js";
 
 dotenv.config();
 
@@ -23,17 +23,17 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Mount routes
-app.use('/api/auth', authRoutes);
-app.use('/api/users', userRoutes);
-app.use('/api/leads', leadRoutes);
-app.use('/api/whatsapp', whatsappRoutes);
-app.use('/api/website', websiteRoutes);
-app.use('/api/activities', activityRoutes);
-app.use('/api/followups', followupRoutes);
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/leads", leadRoutes);
+app.use("/api/whatsapp", whatsappRoutes);
+app.use("/api/website", websiteRoutes);
+
+app.use("/api/followups", followupRoutes);
 
 // Base route
-app.get('/', (req, res) => {
-  res.send('API is running...');
+app.get("/", (req, res) => {
+  res.send("API is running...");
 });
 
 const PORT = process.env.PORT || 5000;
