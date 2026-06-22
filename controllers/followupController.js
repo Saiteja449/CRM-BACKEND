@@ -18,7 +18,17 @@ export const getFollowups = async (req, res) => {
 // @access  Public
 export const createFollowup = async (req, res) => {
   try {
-    const { leadId, leadName, type, date, time, priority, notes, author } = req.body;
+    const {
+      leadId,
+      leadName,
+      type,
+      date,
+      time,
+      priority,
+      notes,
+      author,
+      done,
+    } = req.body;
     const followup = new Followup({
       leadId,
       leadName,
@@ -28,6 +38,7 @@ export const createFollowup = async (req, res) => {
       priority,
       notes,
       author,
+      done,
     });
     const createdFollowup = await followup.save();
 
@@ -54,9 +65,10 @@ export const updateFollowup = async (req, res) => {
     const followup = await Followup.findById(req.params.id);
 
     if (followup) {
-      followup.done = req.body.done !== undefined ? req.body.done : followup.done;
+      followup.done =
+        req.body.done !== undefined ? req.body.done : followup.done;
       // Other fields can be updated if needed, but primarily we toggle 'done'
-      
+
       const updatedFollowup = await followup.save();
       res.json(updatedFollowup);
     } else {
