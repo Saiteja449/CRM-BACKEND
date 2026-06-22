@@ -1,6 +1,7 @@
 import express from "express";
 import {
   getLeads,
+  getPaginatedLeads,
   createLead,
   updateLead,
   deleteLead,
@@ -9,6 +10,7 @@ import {
 const router = express.Router();
 
 router.route("/").get(getLeads).post(createLead);
+router.route("/paginated").get(getPaginatedLeads);
 
 router.route("/:id").put(updateLead).delete(deleteLead);
 
