@@ -1,4 +1,5 @@
 import User from "../models/User.js";
+import Notification from "../models/Notification.js";
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -40,6 +41,13 @@ export const addSalesPerson = async (req, res) => {
       name,
       email,
       role: "sales person", // Will be mapped to 'Sales Representative' in frontend
+    });
+
+    await Notification.create({
+      title: "New Employee Added",
+      message: `${user.name} was added as a Sales Representative.`,
+      type: "system",
+      targetRoles: ["sales manager"],
     });
 
     res.status(201).json({

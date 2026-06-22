@@ -7,6 +7,7 @@ import userRoutes from "./routes/userRoutes.js";
 import leadRoutes from "./routes/leadRoutes.js";
 import whatsappRoutes from "./routes/whatsappRoutes.js";
 import websiteRoutes from "./routes/websiteRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 
 import followupRoutes from "./routes/followupRoutes.js";
 
@@ -28,6 +29,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/leads", leadRoutes);
 app.use("/api/whatsapp", whatsappRoutes);
 app.use("/api/website", websiteRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 app.use("/api/followups", followupRoutes);
 

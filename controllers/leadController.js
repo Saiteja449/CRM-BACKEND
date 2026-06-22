@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import AssignmentState from "../models/AssignmentState.js";
 
 import Followup from "../models/Followup.js";
+import Notification from "../models/Notification.js";
 
 export const getLeads = async (req, res) => {
   try {
@@ -52,6 +53,18 @@ export const createLead = async (req, res) => {
     }
 
     const lead = await Lead.create(leadData);
+
+    const assignedUser = await User.findOne({ name: lead.assignedTo });
+    const targetUsers = assignedUser ? [assignedUser._id] : [];
+    
+    await Notification.create({
+      title: "New Lead Added",
+      message: `Lead ${lead.name} has been added and assigned to ${lead.assignedTo}.`,
+      type: "new_lead",
+      targetRoles: ["sales manager"],
+      targetUsers: targetUsers,
+    });
+
     res.status(201).json(lead);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -67,6 +80,15 @@ export const updateLead = async (req, res) => {
 
     if (!lead) {
       return res.status(404).json({ message: "Lead not found" });
+    }
+
+    if (updateData.status) {
+      await Notification.create({
+        title: "Lead Status Updated",
+        message: `Lead ${lead.name} status updated to ${lead.status}.`,
+        type: "lead_update",
+        targetRoles: ["sales manager"],
+      });
     }
 
     res.json(lead);

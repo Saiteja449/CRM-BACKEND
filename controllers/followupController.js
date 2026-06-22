@@ -1,4 +1,5 @@
 import Followup from "../models/Followup.js";
+import Notification from "../models/Notification.js";
 
 // @desc    Get all followups
 // @route   GET /api/followups
@@ -29,6 +30,16 @@ export const createFollowup = async (req, res) => {
       author,
     });
     const createdFollowup = await followup.save();
+
+    if (type !== "Lead Edited") {
+      await Notification.create({
+        title: "New Follow-up Scheduled",
+        message: `A follow-up was scheduled for lead ${leadName} by ${author}.`,
+        type: "system",
+        targetRoles: ["sales manager"],
+      });
+    }
+
     res.status(201).json(createdFollowup);
   } catch (error) {
     res.status(400).json({ message: error.message });
