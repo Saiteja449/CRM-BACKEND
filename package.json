@@ -12,13 +12,26 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "mime-types": "^3.0.2",
     "mongoose": "^9.6.2",
     "nodemailer": "^9.0.1",
-    "nodemon": "^3.1.14"
+    "nodemon": "^3.1.14",
+    "pino": "^10.3.1",
+    "socket.io": "^4.8.3"
+  },
+  "nodemonConfig": {
+    "ignore": [
+      "whatsapp_auth_info/*",
+      "uploads/*",
+      "*.log",
+      ".git"
+    ]
   }
 }

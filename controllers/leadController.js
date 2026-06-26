@@ -4,6 +4,8 @@ import AssignmentState from "../models/AssignmentState.js";
 
 import Followup from "../models/Followup.js";
 import Notification from "../models/Notification.js";
+import Conversation from "../models/Conversation.js";
+import Message from "../models/Message.js";
 
 export const getLeads = async (req, res) => {
   try {
@@ -301,8 +303,10 @@ export const deleteLead = async (req, res) => {
     }
 
     await Followup.deleteMany({ leadId: id });
+    await Conversation.deleteMany({ leadId: id });
+    await Message.deleteMany({ leadId: id });
 
-    res.json({ message: "Lead removed successfully" });
+    res.json({ message: "Lead and associated conversation history removed successfully" });
   } catch (error) {
     res.status(400).json({ message: error.message });
   }

@@ -1,11 +1,41 @@
 import express from "express";
 import {
-  verifyWebhook,
-  receiveWebhook,
+  connectClient,
+  getStatus,
+  logoutClient,
+  getQR,
+  getConversations,
+  getMessages,
+  sendMessage,
+  toggleAI,
+  getSuggestions,
+  getKB,
+  createKB,
+  deleteKB,
+  uploadMedia,
 } from "../controllers/whatsappController.js";
 
 const router = express.Router();
 
-router.route("/webhook").get(verifyWebhook).post(receiveWebhook);
+// Session Control
+router.post("/connect", connectClient);
+router.get("/status", getStatus);
+router.post("/logout", logoutClient);
+router.get("/qr", getQR);
+router.post("/upload", uploadMedia);
+
+// Chats and Messages
+router.get("/conversations", getConversations);
+router.get("/conversation/:leadId", getMessages);
+router.post("/message/send", sendMessage);
+
+// AI Automation
+router.post("/ai/toggle", toggleAI);
+router.post("/ai/reply", getSuggestions);
+
+// Knowledge Base Management
+router.route("/knowledge-base").get(getKB).post(createKB);
+
+router.route("/knowledge-base/:id").delete(deleteKB);
 
 export default router;

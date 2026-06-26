@@ -85,6 +85,41 @@ const leadSchema = new mongoose.Schema(
     appointmentTime: {
       type: String,
     },
+    lastMessage: {
+      type: String,
+    },
+    lastActivity: {
+      type: Date,
+    },
+    aiEnabled: {
+      type: Boolean,
+      default: true,
+    },
+    aiQualification: {
+      petType: { type: String, default: "" },
+      breed: { type: String, default: "" },
+      city: { type: String, default: "" },
+      intent: { type: String, default: "" },
+      budget: { type: String, default: "" },
+      urgency: { type: String, default: "" },
+      interestScore: { type: Number, default: 0 },
+    },
+    aiTags: {
+      type: [String],
+      default: [],
+    },
+    conversationSummary: {
+      type: String,
+    },
+    sentiment: {
+      type: String,
+    },
+    probabilityOfConversion: {
+      type: Number,
+    },
+    nextAction: {
+      type: String,
+    },
   },
   { timestamps: true },
 );

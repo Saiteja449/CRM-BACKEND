@@ -5,3 +5,5 @@ node_modules/
 coverage/
 build/
 dist/
+whatsapp_auth_info/
+uploads/
