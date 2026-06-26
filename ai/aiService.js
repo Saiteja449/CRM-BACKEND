@@ -63,9 +63,12 @@ LATEST CUSTOMER MESSAGE:
 
 YOUR INSTRUCTIONS for generating the "reply":
 1. READ THE CONVERSATION HISTORY: Base your response on the context of previous messages. Do not repeat questions you have already asked. 
-2. BE NATURAL & HUMAN-LIKE: Keep your response short, conversational, and friendly (like a real human on WhatsApp). Use emojis naturally but sparingly. Do NOT mention you are an AI.
-3. BE HELPFUL & ACCURATE: Only use facts from the Company Knowledge Base. If a user asks for prices, services, or locations not listed in the Knowledge Base, reply exactly with: "I'll connect you with one of our team members who can help with that." Do NOT invent or hallucinate information.
-4. ASK ONE QUESTION AT A TIME: If you need to qualify the lead (find out their pet type, breed, location, or budget), ask only ONE follow-up question naturally at the end of your message.
+2. DYNAMIC DATA COLLECTION: Your goal is to collect all missing qualification data: City, Pet Type, Breed, Pet Age, Service Intent, Budget, and Special Requirements. 
+   - Do NOT ask all questions at once. Ask only ONE relevant question at a time naturally based on the user's input.
+   - If the user provides any of this information at any point (even if you didn't ask for it), you must accurately extract it into your JSON output.
+   - Adapt your questions based on what they say. (e.g., if they ask for Grooming, ask which specific grooming service they need if not mentioned).
+3. BE NATURAL & HUMAN-LIKE: Keep your response short, conversational, and friendly (like a real human on WhatsApp). Use emojis naturally but sparingly. Do NOT mention you are an AI.
+4. BE HELPFUL & ACCURATE: Only use facts from the Company Knowledge Base. If a user asks for prices, services, or locations not listed in the Knowledge Base, reply exactly with: "I'll connect you with one of our team members who can help with that." Do NOT invent or hallucinate information.
 
 YOUR INSTRUCTIONS for automated actions:
 5. If the customer is angry, explicitly asks for a human/agent/call, or if you cannot answer their question, set "disableAI" to true.
@@ -82,9 +85,11 @@ You must respond in JSON format ONLY matching this schema:
   "qualification": {
     "petType": "Dog or Cat or other",
     "breed": "Breed name if mentioned",
+    "petAge": "Age of the pet if mentioned",
     "city": "City name if mentioned",
     "intent": "Buy / Grooming / Training / Sitting / etc.",
     "budget": "Budget info if mentioned, else empty string",
+    "specialRequirements": "Allergies, skin issues, etc. if mentioned",
     "urgency": "High or Medium or Low",
     "interestScore": 8
   },
@@ -104,8 +109,9 @@ You must respond in JSON format ONLY matching this schema:
 }`;
 
     const genAI = new GoogleGenerativeAI(apiKey);
+
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-flash-latest",
       generationConfig: {
         responseMimeType: "application/json",
       },
@@ -136,23 +142,29 @@ You must respond in JSON format ONLY matching this schema:
       leadId,
       prompt: systemPrompt,
       response: rawResponse,
-      model: "gemini-2.5-flash",
+      model: "gemini-flash-latest",
       tokensUsed: 0, // Free tier / approximate
     });
 
     const updatePayload = {};
 
     if (parsed.qualification) {
+      const aiData = parsed.qualification || {};
       const prevQual = lead.aiQualification || {};
+
+      updatePayload.lastMessage = incomingText;
+      updatePayload.lastActivity = new Date();
       updatePayload.aiQualification = {
-        petType: parsed.qualification.petType || prevQual.petType || "",
-        breed: parsed.qualification.breed || prevQual.breed || "",
-        city: parsed.qualification.city || prevQual.city || "",
-        intent: parsed.qualification.intent || prevQual.intent || "",
-        budget: parsed.qualification.budget || prevQual.budget || "",
-        urgency: parsed.qualification.urgency || prevQual.urgency || "Medium",
-        interestScore:
-          parsed.qualification.interestScore ?? prevQual.interestScore ?? 0,
+        petType: aiData.petType || prevQual.petType || "",
+        breed: aiData.breed || prevQual.breed || "",
+        petAge: aiData.petAge || prevQual.petAge || "",
+        city: aiData.city || prevQual.city || "",
+        intent: aiData.intent || prevQual.intent || "",
+        budget: aiData.budget || prevQual.budget || "",
+        specialRequirements:
+          aiData.specialRequirements || prevQual.specialRequirements || "",
+        urgency: aiData.urgency || prevQual.urgency || "Medium",
+        interestScore: aiData.interestScore ?? prevQual.interestScore ?? 0,
       };
     }
 
@@ -291,7 +303,7 @@ You must return a JSON array containing exactly 3 strings:
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-flash",
+      model: "gemini-flash-latest",
       generationConfig: {
         responseMimeType: "application/json",
       },

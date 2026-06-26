@@ -98,9 +98,11 @@ const leadSchema = new mongoose.Schema(
     aiQualification: {
       petType: { type: String, default: "" },
       breed: { type: String, default: "" },
+      petAge: { type: String, default: "" },
       city: { type: String, default: "" },
       intent: { type: String, default: "" },
       budget: { type: String, default: "" },
+      specialRequirements: { type: String, default: "" },
       urgency: { type: String, default: "" },
       interestScore: { type: Number, default: 0 },
     },
