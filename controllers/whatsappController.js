@@ -30,20 +30,20 @@ export const getStatus = async (req, res) => {
   try {
     // First try in-memory status
     const memoryStatus = getWhatsAppStatus();
-    
+
     // Also check database for persisted state (handles page refresh after connect)
     const dbSession = await WhatsAppSession.findOne();
-    
+
     const status = dbSession?.status || memoryStatus.status;
     const qrCode = memoryStatus.qrCode || dbSession?.qrCode || "";
     const connectedPhone = dbSession?.connectedPhone || "";
     const connectedName = dbSession?.connectedName || "";
-    
+
     res.status(200).json({
       status,
       qrCode,
       connectedPhone,
-      connectedName
+      connectedName,
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -56,7 +56,9 @@ export const getStatus = async (req, res) => {
 export const logoutClient = async (req, res) => {
   try {
     await logoutWhatsApp();
-    res.status(200).json({ message: "WhatsApp disconnected and logged out successfully." });
+    res
+      .status(200)
+      .json({ message: "WhatsApp disconnected and logged out successfully." });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -82,10 +84,10 @@ export const getConversations = async (req, res) => {
     const { role, name } = req.query;
 
     const populateOptions = { path: "leadId" };
-    
+
     if (role === "Sales Representative" && name) {
       populateOptions.match = {
-        assignedTo: { $regex: new RegExp("^" + name + "$", "i") }
+        assignedTo: { $regex: new RegExp("^" + name + "$", "i") },
       };
     }
 
@@ -95,7 +97,7 @@ export const getConversations = async (req, res) => {
 
     // Filter out conversations where leadId is null (due to population match failure)
     if (role === "Sales Representative" && name) {
-      conversations = conversations.filter(c => c.leadId != null);
+      conversations = conversations.filter((c) => c.leadId != null);
     }
 
     res.status(200).json(conversations);
@@ -131,7 +133,9 @@ export const sendMessage = async (req, res) => {
   try {
     const { leadId, text, senderName } = req.body;
     if (!leadId || !text) {
-      return res.status(400).json({ message: "leadId and text are required fields." });
+      return res
+        .status(400)
+        .json({ message: "leadId and text are required fields." });
     }
 
     const messageRecord = await sendMessageFromCRM(leadId, text, senderName);
@@ -148,20 +152,27 @@ export const toggleAI = async (req, res) => {
   try {
     const { leadId, aiEnabled } = req.body;
     if (leadId === undefined || aiEnabled === undefined) {
-      return res.status(400).json({ message: "leadId and aiEnabled are required fields." });
+      return res
+        .status(400)
+        .json({ message: "leadId and aiEnabled are required fields." });
     }
 
     const lead = await Lead.findByIdAndUpdate(
       leadId,
       { aiEnabled },
-      { new: true }
+      { new: true },
     );
 
     if (!lead) {
       return res.status(404).json({ message: "Lead not found" });
     }
 
-    res.status(200).json({ message: `AI response state set to ${aiEnabled} for ${lead.name}`, lead });
+    res
+      .status(200)
+      .json({
+        message: `AI response state set to ${aiEnabled} for ${lead.name}`,
+        lead,
+      });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -203,7 +214,9 @@ export const createKB = async (req, res) => {
   try {
     const { title, content, type } = req.body;
     if (!title || !content || !type) {
-      return res.status(400).json({ message: "title, content, and type are required." });
+      return res
+        .status(400)
+        .json({ message: "title, content, and type are required." });
     }
 
     const item = await KnowledgeBase.create({ title, content, type });
@@ -220,7 +233,9 @@ export const deleteKB = async (req, res) => {
   try {
     const { id } = req.params;
     await KnowledgeBase.findByIdAndDelete(id);
-    res.status(200).json({ message: "Knowledge base item deleted successfully." });
+    res
+      .status(200)
+      .json({ message: "Knowledge base item deleted successfully." });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -237,7 +252,9 @@ export const uploadMedia = async (req, res) => {
   try {
     const { fileName, base64Data } = req.body;
     if (!fileName || !base64Data) {
-      return res.status(400).json({ message: "fileName and base64Data are required." });
+      return res
+        .status(400)
+        .json({ message: "fileName and base64Data are required." });
     }
 
     const buffer = Buffer.from(base64Data, "base64");

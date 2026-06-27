@@ -126,6 +126,28 @@ const leadSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+// Cascade delete associated records when a lead is deleted
+leadSchema.pre("findOneAndDelete", async function () {
+  const doc = await this.model.findOne(this.getQuery());
+  if (doc) {
+    const id = doc._id;
+    await mongoose.model("Followup").deleteMany({ leadId: id });
+    await mongoose.model("Conversation").deleteMany({ leadId: id });
+    await mongoose.model("Message").deleteMany({ leadId: id });
+    await mongoose.model("AILog").deleteMany({ leadId: id });
+  }
+});
+
+leadSchema.pre("deleteOne", { document: true, query: true }, async function () {
+  const id = this._id || (this.getQuery && (await this.model.findOne(this.getQuery()))?._id);
+  if (id) {
+    await mongoose.model("Followup").deleteMany({ leadId: id });
+    await mongoose.model("Conversation").deleteMany({ leadId: id });
+    await mongoose.model("Message").deleteMany({ leadId: id });
+    await mongoose.model("AILog").deleteMany({ leadId: id });
+  }
+});
+
 // Convert _id to id for frontend compatibility
 leadSchema.set("toJSON", {
   virtuals: true,

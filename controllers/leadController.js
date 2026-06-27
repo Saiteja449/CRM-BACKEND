@@ -303,11 +303,6 @@ export const deleteLead = async (req, res) => {
       return res.status(404).json({ message: "Lead not found" });
     }
 
-    await Followup.deleteMany({ leadId: id });
-    await Conversation.deleteMany({ leadId: id });
-    await Message.deleteMany({ leadId: id });
-    await AILog.deleteMany({ leadId: id });
-
     res.json({
       message: "Lead and associated conversation history removed successfully",
     });
