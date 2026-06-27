@@ -235,66 +235,99 @@ You must respond in JSON format ONLY matching this schema:
     let rawResponse = "";
     let tokensUsed = 0;
     let modelNameUsed = "";
+    let success = false;
+    let parsed = null;
+
+    const fallbackModels = [
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "meta-llama/llama-prompt-guard-2-22m"
+    ];
 
     if (groqApiKey && groqApiKey !== "your_groq_api_key_here") {
-      modelNameUsed = "llama-3.3-70b-versatile";
-      const response = await fetch(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${groqApiKey}`,
-          },
-          body: JSON.stringify({
-            model: modelNameUsed,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: incomingText },
-            ],
-            response_format: { type: "json_object" },
-          }),
-        },
-      );
+      for (const model of fallbackModels) {
+        try {
+          modelNameUsed = model;
+          console.log(`Attempting Groq call with model: ${modelNameUsed}...`);
+          const response = await fetch(
+            "https://api.groq.com/openai/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${groqApiKey}`,
+              },
+              body: JSON.stringify({
+                model: modelNameUsed,
+                messages: [
+                  { role: "system", content: systemPrompt },
+                  { role: "user", content: incomingText },
+                ],
+                response_format: { type: "json_object" },
+              }),
+            },
+          );
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(
-          `Groq API error (status ${response.status}): ${errText}`,
-        );
+          if (response.ok) {
+            const resJson = await response.json();
+            const content = resJson.choices[0].message.content;
+            try {
+              parsed = JSON.parse(content);
+              rawResponse = content;
+              tokensUsed = resJson.usage?.total_tokens || 0;
+              success = true;
+              console.log(`Groq call succeeded with model: ${modelNameUsed} and returned valid JSON.`);
+              break;
+            } catch (jsonErr) {
+              console.warn(`Groq model ${modelNameUsed} returned invalid JSON: ${content}. Trying next model...`);
+            }
+          } else {
+            const errText = await response.text();
+            console.warn(`Groq model ${modelNameUsed} failed (status ${response.status}): ${errText}`);
+          }
+        } catch (groqErr) {
+          console.warn(`Groq model ${modelNameUsed} threw error:`, groqErr);
+        }
       }
+    }
 
-      const resJson = await response.json();
-      rawResponse = resJson.choices[0].message.content;
-      tokensUsed = resJson.usage?.total_tokens || 0;
-    } else if (geminiApiKey) {
-      modelNameUsed = "gemini-flash-latest";
-      const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const model = genAI.getGenerativeModel({
-        model: modelNameUsed,
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
-      });
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
-      });
-      rawResponse = result.response.text();
-      tokensUsed = 0;
-    } else {
+    if (!success && geminiApiKey) {
+      try {
+        modelNameUsed = "gemini-flash-latest";
+        console.log(`Attempting Gemini fallback call with model: ${modelNameUsed}...`);
+        const genAI = new GoogleGenerativeAI(geminiApiKey);
+        const model = genAI.getGenerativeModel({
+          model: modelNameUsed,
+          generationConfig: {
+            responseMimeType: "application/json",
+          },
+        });
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
+        });
+        const content = result.response.text();
+        try {
+          parsed = JSON.parse(content);
+          rawResponse = content;
+          tokensUsed = 0;
+          success = true;
+          console.log("Gemini fallback call succeeded and returned valid JSON!");
+        } catch (jsonErr) {
+          console.warn(`Gemini fallback returned invalid JSON: ${content}`);
+        }
+      } catch (geminiErr) {
+        console.error("Gemini API call failed:", geminiErr);
+      }
+    }
+
+    if (!success) {
+      console.error("All AI models (Groq and Gemini) failed to generate response.");
       return "I'll connect you with one of our team members.";
     }
 
     console.log("AI Raw JSON Response:", rawResponse);
 
-    let parsed;
-    try {
-      parsed = JSON.parse(rawResponse);
-    } catch (parseError) {
-      console.error(
-        "Failed to parse AI JSON output. Attempting cleanup...",
-        parseError,
-      );
+    if (!parsed) {
       parsed = {
         reply: "I'll connect you with one of our team members.",
         disableAI: true,
@@ -470,49 +503,89 @@ You must return a JSON array containing exactly 3 strings:
 ["Suggestion 1", "Suggestion 2", "Suggestion 3"]`;
 
     let rawResponse = "";
+    let success = false;
+    let parsed = null;
+
+    const fallbackModels = [
+      "llama-3.3-70b-versatile",
+      "llama-3.1-8b-instant",
+      "meta-llama/llama-prompt-guard-2-22m"
+    ];
+
     if (groqApiKey && groqApiKey !== "your_groq_api_key_here") {
-      const response = await fetch(
-        "https://api.groq.com/openai/v1/chat/completions",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${groqApiKey}`,
-          },
-          body: JSON.stringify({
-            model: "llama-3.3-70b-versatile",
-            messages: [{ role: "user", content: systemPrompt }],
-            response_format: { type: "json_object" },
-          }),
-        },
-      );
+      for (const model of fallbackModels) {
+        try {
+          console.log(`Attempting Groq call for reply suggestions with model: ${model}...`);
+          const response = await fetch(
+            "https://api.groq.com/openai/v1/chat/completions",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${groqApiKey}`,
+              },
+              body: JSON.stringify({
+                model: model,
+                messages: [{ role: "user", content: systemPrompt }],
+                response_format: { type: "json_object" },
+              }),
+            },
+          );
 
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(
-          `Groq API error (status ${response.status}): ${errText}`,
-        );
+          if (response.ok) {
+            const resJson = await response.json();
+            const content = resJson.choices[0].message.content;
+            try {
+              parsed = JSON.parse(content);
+              rawResponse = content;
+              success = true;
+              console.log(`Groq suggestions call succeeded with model: ${model} and returned valid JSON.`);
+              break;
+            } catch (jsonErr) {
+              console.warn(`Groq suggestions model ${model} returned invalid JSON: ${content}. Trying next...`);
+            }
+          } else {
+            const errText = await response.text();
+            console.warn(`Groq suggestions model ${model} failed (status ${response.status}): ${errText}`);
+          }
+        } catch (groqErr) {
+          console.warn(`Groq suggestions model ${model} threw error:`, groqErr);
+        }
       }
+    }
 
-      const resJson = await response.json();
-      rawResponse = resJson.choices[0].message.content;
-    } else if (geminiApiKey) {
-      const genAI = new GoogleGenerativeAI(geminiApiKey);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-flash-latest",
-        generationConfig: {
-          responseMimeType: "application/json",
-        },
-      });
-      const result = await model.generateContent({
-        contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
-      });
-      rawResponse = result.response.text();
-    } else {
+    if (!success && geminiApiKey) {
+      try {
+        console.log("Attempting Gemini fallback for reply suggestions...");
+        const genAI = new GoogleGenerativeAI(geminiApiKey);
+        const model = genAI.getGenerativeModel({
+          model: "gemini-flash-latest",
+          generationConfig: {
+            responseMimeType: "application/json",
+          },
+        });
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
+        });
+        const content = result.response.text();
+        try {
+          parsed = JSON.parse(content);
+          rawResponse = content;
+          success = true;
+          console.log("Gemini suggestions call succeeded and returned valid JSON!");
+        } catch (jsonErr) {
+          console.warn(`Gemini suggestions fallback returned invalid JSON: ${content}`);
+        }
+      } catch (geminiErr) {
+        console.error("Gemini suggestions call failed:", geminiErr);
+      }
+    }
+
+    if (!success || !parsed) {
       return [];
     }
 
-    return JSON.parse(rawResponse);
+    return parsed;
   } catch (err) {
     console.error("Failed to generate suggestions:", err);
     return [];
