@@ -360,12 +360,10 @@ const handleIncomingMessage = async (msg) => {
       `[DEBUG] Successfully processed and broadcasted message to lead ID: ${lead._id}`,
     );
 
-    // 6. Asynchronously trigger AI agent response
+    // 6. Asynchronously trigger AI agent response with 4-second debounce
     if (lead.aiEnabled) {
       console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
-      // Push to sequential processing queue
-      aiMessageQueue.push({ lead, remoteJid, incomingText: textContent });
-      processNextInQueue();
+      triggerAIDebounced(lead, remoteJid, textContent);
     }
   } catch (error) {
     console.error("Error processing incoming WhatsApp message:", error);
@@ -405,29 +403,83 @@ const downloadAndSaveMedia = async (msg, type) => {
   }
 };
 
-// AI Message Queue for sequential processing
-const aiMessageQueue = [];
-let isProcessingQueue = false;
+// Global Sequential Execution Queue for AI API Calls
+const globalAIExecutionQueue = [];
+let isGlobalQueueProcessing = false;
 
-const processNextInQueue = async () => {
-  if (isProcessingQueue || aiMessageQueue.length === 0) return;
-  isProcessingQueue = true;
+const processGlobalAIQueue = async () => {
+  if (isGlobalQueueProcessing || globalAIExecutionQueue.length === 0) return;
+  isGlobalQueueProcessing = true;
 
-  while (aiMessageQueue.length > 0) {
-    const { lead, remoteJid, incomingText } = aiMessageQueue.shift();
-    await processAIResponse(lead, remoteJid, incomingText);
+  while (globalAIExecutionQueue.length > 0) {
+    const task = globalAIExecutionQueue.shift();
+    try {
+      await task();
+    } catch (err) {
+      console.error("Error executing global AI task:", err);
+    }
   }
 
-  isProcessingQueue = false;
+  isGlobalQueueProcessing = false;
+};
+
+// AI Message Debouncer for batching rapid messages
+const aiDebounceTimers = {};
+const aiAccumulatedText = {};
+const aiIsProcessing = {};
+
+const triggerAIDebounced = (lead, remoteJid, incomingText) => {
+  const leadId = lead._id.toString();
+
+  if (incomingText) {
+    if (aiAccumulatedText[leadId]) {
+      aiAccumulatedText[leadId] += "\n" + incomingText;
+    } else {
+      aiAccumulatedText[leadId] = incomingText;
+    }
+  }
+
+  if (aiDebounceTimers[leadId]) {
+    clearTimeout(aiDebounceTimers[leadId]);
+  }
+
+  aiDebounceTimers[leadId] = setTimeout(() => {
+    if (aiIsProcessing[leadId]) {
+      // If AI is currently generating a response for this lead, wait and retry
+      triggerAIDebounced(lead, remoteJid, "");
+      return;
+    }
+
+    const batchedText = aiAccumulatedText[leadId] ? aiAccumulatedText[leadId].trim() : "";
+    if (!batchedText) return;
+
+    aiIsProcessing[leadId] = true;
+    delete aiAccumulatedText[leadId];
+    delete aiDebounceTimers[leadId];
+
+    // Push the processing task to the global sequential queue
+    globalAIExecutionQueue.push(async () => {
+      try {
+        await processAIResponse(lead, remoteJid, batchedText);
+      } finally {
+        aiIsProcessing[leadId] = false;
+        // Process any messages that arrived while AI was thinking
+        if (aiAccumulatedText[leadId]) {
+          triggerAIDebounced(lead, remoteJid, "");
+        }
+      }
+    });
+
+    // Start the global queue processor if it isn't already running
+    processGlobalAIQueue();
+  }, 4000); // Wait 4 seconds for user to finish typing
 };
 
 /**
- * Asynchronous worker to trigger the Gemini AI response generation and push back.
+ * Asynchronous worker to trigger the AI response generation and push back.
  */
 const processAIResponse = async (lead, remoteJid, incomingText) => {
   try {
-    // Wait 2 seconds before responding
-    await new Promise((resolve) => setTimeout(resolve, 5000));
 
     // Emit typing status over socket.io
     const io = getIO();
