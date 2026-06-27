@@ -307,9 +307,9 @@ const handleIncomingMessage = async (msg) => {
       });
     } else {
       // Update existing lead timestamps and latest message
-      lead.lastMessage = textContent;
-      lead.lastActivity = timestamp;
-      await lead.save();
+      await Lead.findByIdAndUpdate(lead._id, {
+        $set: { lastMessage: textContent, lastActivity: timestamp },
+      });
     }
 
     // 3. Create message record
@@ -427,7 +427,7 @@ const processNextInQueue = async () => {
 const processAIResponse = async (lead, remoteJid, incomingText) => {
   try {
     // Wait 2 seconds before responding
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 5000));
 
     // Emit typing status over socket.io
     const io = getIO();
@@ -505,7 +505,11 @@ const processAIResponse = async (lead, remoteJid, incomingText) => {
 /**
  * Expose function to dispatch manual messages from the CRM UI.
  */
-export const sendMessageFromCRM = async (leadId, messageText, senderName = "Agent") => {
+export const sendMessageFromCRM = async (
+  leadId,
+  messageText,
+  senderName = "Agent",
+) => {
   if (!sock) {
     throw new Error("WhatsApp client is not connected!");
   }

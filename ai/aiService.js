@@ -6,6 +6,7 @@ import AILog from "../models/AILog.js";
 import Followup from "../models/Followup.js";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
+import AssignmentState from "../models/AssignmentState.js";
 
 export const generateAIResponse = async (leadId, incomingText) => {
   try {
@@ -17,6 +18,44 @@ export const generateAIResponse = async (leadId, incomingText) => {
     const lead = await Lead.findById(leadId);
     if (!lead) {
       throw new Error(`Lead not found with ID: ${leadId}`);
+    }
+
+    // Auto-assign representative if currently Unassigned or not set
+    let assignedRep = lead.assignedTo;
+    if (!assignedRep || assignedRep === "Unassigned") {
+      const representatives = await User.find({ role: "sales person" }).sort({ _id: 1 });
+      if (representatives && representatives.length > 0) {
+        let state = await AssignmentState.findOne({ key: "leadAssignment" });
+        if (!state) {
+          state = await AssignmentState.create({
+            key: "leadAssignment",
+            lastAssignedIndex: -1,
+          });
+        }
+        let nextIndex = state.lastAssignedIndex + 1;
+        if (nextIndex >= representatives.length) {
+          nextIndex = 0;
+        }
+        assignedRep = representatives[nextIndex].name;
+        state.lastAssignedIndex = nextIndex;
+        await state.save();
+
+        lead.assignedTo = assignedRep;
+        await lead.save();
+
+        // Create Lead Notification
+        const assignedAgent = await User.findOne({ name: assignedRep });
+        const targetUsers = assignedAgent ? [assignedAgent._id] : [];
+        await Notification.create({
+          title: "Lead Assigned by AI",
+          message: `Lead ${lead.name} has been assigned to ${assignedRep}.`,
+          type: "lead_update",
+          targetRoles: ["sales manager"],
+          targetUsers: targetUsers,
+        });
+      } else {
+        assignedRep = "Our team";
+      }
     }
 
     const kbItems = await KnowledgeBase.find({ isActive: true });
@@ -43,17 +82,48 @@ export const generateAIResponse = async (leadId, incomingText) => {
     const agents = await User.find({ role: "sales person" }).select("name");
     const agentList = agents.map((a) => a.name).join(", ");
 
-    const systemPrompt = `You are a highly skilled, friendly, and professional Customer Success Manager for Petsfolio, a premium pet care and services company.
-Your goal is to guide customers, answer their questions accurately, and collect necessary information to qualify them as leads.
+    const systemPrompt = `You are a friendly, warm, and professional Customer Success Manager for Petsfolio, a premium pet care and services company.
+Your goal is to greet the customer naturally and collect the information we need to register their requirement.
 
 COMPANY KNOWLEDGE BASE:
 ${kbContext}
 
+SERVICES WE OFFER (with eligible pet types):
+| Service        | Dog | Cat |
+|----------------|-----|-----|
+| Training       | ✅  | ❌  |
+| Grooming       | ✅  | ✅  |
+| Walking        | ✅  | ❌  |
+| Pet Sitting    | ✅  | ❌  |
+| Pet Insurance  | ✅  | ✅  |
+
+PET TYPES WE SERVE:
+We serve ONLY dogs and cats. We do NOT offer any services for any other animals (e.g. birds, rabbits, hamsters, etc.). If a customer mentions an unsupported pet type, politely explain that we only serve dogs and cats, and list the services we offer.
+
+DATA COLLECTION RULES:
+- If the customer wants Pet Insurance:
+  We do NOT need to collect Pet Breed, Pet Age, City, or Health Issues. Once you know their service is Pet Insurance and their pet type is Dog or Cat, you have all required information and should proceed to COMPLETION immediately.
+- If the customer wants Grooming, Walking, Training, or Pet Sitting (any service other than Pet Insurance):
+  You MUST collect the following 5 details from the user:
+  1. Pet Type (Dog / Cat)
+  2. Pet Breed
+  3. Pet Age
+  4. City
+  5. Health Issues (allergies, skin conditions, illnesses, special requirements, etc. If none, write "None").
+  Do NOT consider collection complete until all these 5 details are collected.
+
 LEAD CONTEXT:
 - Name: ${lead.name}
 - Phone: ${lead.phone}
-- Assigned Representative: ${lead.assignedTo || "Unassigned"}
+- Assigned Representative: ${assignedRep}
 - Status: ${lead.status || "New"}
+- Already Collected Details (anything marked "Missing" still needs to be asked):
+  * Service: ${lead.aiQualification?.intent || "Missing"}
+  * City: ${lead.aiQualification?.city || "Missing"}
+  * Pet Type: ${lead.aiQualification?.petType || "Missing"}
+  * Breed: ${lead.aiQualification?.breed || "Missing"}
+  * Pet Age: ${lead.aiQualification?.petAge || "Missing"}
+  * Health Issues: ${lead.aiQualification?.specialRequirements || "Missing"}
 
 CONVERSATION HISTORY:
 ${chatHistoryLog || "(No prior history)"}
@@ -61,57 +131,79 @@ ${chatHistoryLog || "(No prior history)"}
 LATEST CUSTOMER MESSAGE: 
 "${incomingText}"
 
-YOUR INSTRUCTIONS for generating the "reply":
-1. READ THE CONVERSATION HISTORY: Base your response on the context of previous messages. Do not repeat questions you have already asked. 
-2. DYNAMIC DATA COLLECTION: Your goal is to collect all missing qualification data: City, Pet Type, Breed, Pet Age, Service Intent, Budget, and Special Requirements. 
-   - Do NOT ask all questions at once. Ask only ONE relevant question at a time naturally based on the user's input.
-   - If the user provides any of this information at any point (even if you didn't ask for it), you must accurately extract it into your JSON output.
-   - Adapt your questions based on what they say. (e.g., if they ask for Grooming, ask which specific grooming service they need if not mentioned).
-3. BE NATURAL & HUMAN-LIKE: Keep your response short, conversational, and friendly (like a real human on WhatsApp). Use emojis naturally but sparingly. Do NOT mention you are an AI.
-4. BE HELPFUL & ACCURATE: Only use facts from the Company Knowledge Base. If a user asks for prices, services, or locations not listed in the Knowledge Base, reply exactly with: "I'll connect you with one of our team members who can help with that." Do NOT invent or hallucinate information.
+---
 
-YOUR INSTRUCTIONS for automated actions:
-5. If the customer is angry, explicitly asks for a human/agent/call, or if you cannot answer their question, set "disableAI" to true.
-6. Qualify the lead based on the *entire* conversation history:
-   - Identify petType, breed, city, intent, budget, and urgency (High/Medium/Low).
-   - Calculate interestScore (0-10) based on their engagement.
-7. Categorize tags (e.g. "Hot Lead", "Interested", "Support", "Complaint", "Sales").
-8. Generate a one-sentence summary of the conversation history.
-9. If the customer asks for a callback, follow-up, or provides a specific time to talk, set "createFollowUp" to true, write notes, and provide "followUpDate" (YYYY-MM-DD). If they request a specific service, suggest updating the status in "updateLeadStatus" (e.g., "Follow Up").
+INSTRUCTIONS:
+
+1. EXTRACT FIRST, THEN ASK (STRICT RULE):
+   Before asking any question, scan the LATEST MESSAGE and the CONVERSATION HISTORY for any details the customer has already provided (service, pet type, city, breed, age, health issues). Populate them in the JSON output immediately. 
+   - NEVER ask a question if the user has already provided that detail in their current or previous messages. For example, if you ask "What type of pet do you have?" and the user replies "I have a dog that is a German Shepherd", extract BOTH Pet Type ("Dog") and Breed ("German Shepherd") instantly and do NOT ask for the breed in the next turn.
+
+2. SERVICE + PET TYPE VALIDATION:
+   If the customer asks for a service we do not offer for cats (Training, Walking, or Pet Sitting), you MUST politely explain that we do not offer that service for cats. List the services we DO offer for cats (Grooming and Pet Insurance), and ask if they would like one of those instead.
+   - Example: "We currently offer Training only for dogs 🐶. For cats, we offer Grooming and Pet Insurance! Would you like either of those?"
+   If the combination of service and pet type is invalid, set the intent field to "" (empty) so they can choose a valid service.
+
+3. STRICT RULE — ONE QUESTION PER MESSAGE:
+   Your reply must contain exactly ONE question. Never combine two questions in the same message. For example, do NOT ask for both pet type and breed at the same time. Ask for "Pet Type" and "Pet Breed" as separate questions in separate turns.
+
+4. CONVERSE NATURALLY:
+   - Talk like a real human on WhatsApp — short, friendly, warm, polite, and natural. Use emojis naturally but sparingly.
+   - React to what the customer says before asking the next question.
+   - Do NOT mention you are an AI or a bot.
+
+5. COMPLETION & CLOSING:
+   Once all required details are collected (or immediately if the service is Pet Insurance and you know the pet type is Dog or Cat):
+   - Send a warm, polite, and natural closing message that includes the Assigned Representative's name: ${assignedRep}. For example: "Thank you for all the details! 🎉 ${assignedRep} will reach out to you shortly to finalize everything. Have a wonderful day!"
+   - Set "disableAI" to true in the returned JSON so that a human takes over.
+   - Do NOT ask any more questions after this.
+
+6. NO PRICING:
+   Never discuss pricing. If the customer asks, reply: "I'll connect you with our team — they'll share the best options and pricing for you! 😊" and continue collecting missing details.
+
+7. ANGRY / HUMAN REQUEST:
+   If the customer is angry, asks for a human/agent/call, or you cannot help, set "disableAI" to true.
+
+8. JSON FIELD RULES:
+   - For any field NOT yet mentioned or collected, output an empty string "". Do NOT use placeholder text.
+   - "intent" should contain one of: "Training", "Grooming", "Walking", "Pet Sitting", "Pet Insurance", or "" if not yet determined. Ensure this is updated instantly if the user mentions needing a service during the conversation.
+   - "urgency" defaults to "Medium".
+   - Calculate interestScore (0-10) based on engagement.
+   - Generate tags (e.g. "Hot Lead", "Interested").
+   - Generate a one-sentence summary.
+   - If the customer asks for a callback or follow-up, set "createFollowUp" to true with date and notes.
 
 You must respond in JSON format ONLY matching this schema:
 {
-  "reply": "Polite text reply to send back to the user",
+  "reply": "Your warm reply text",
   "qualification": {
-    "petType": "Dog or Cat or other",
-    "breed": "Breed name if mentioned",
-    "petAge": "Age of the pet if mentioned",
-    "city": "City name if mentioned",
-    "intent": "Buy / Grooming / Training / Sitting / etc.",
-    "budget": "Budget info if mentioned, else empty string",
-    "specialRequirements": "Allergies, skin issues, etc. if mentioned",
-    "urgency": "High or Medium or Low",
-    "interestScore": 8
+    "petType": "",
+    "breed": "",
+    "petAge": "",
+    "city": "",
+    "intent": "",
+    "specialRequirements": "",
+    "urgency": "Medium",
+    "interestScore": 5
   },
-  "tags": ["Hot Lead", "Sales"],
+  "tags": [],
   "disableAI": false,
-  "summary": "Summary of conversation",
-  "sentiment": "Positive or Neutral or Negative",
-  "probabilityOfConversion": 75,
-  "nextAction": "Schedule onboarding call / Wait for human response / etc.",
+  "summary": "",
+  "sentiment": "Neutral",
+  "probabilityOfConversion": 50,
+  "nextAction": "",
   "triggerActions": {
     "createFollowUp": false,
-    "followUpNotes": "Details of the follow up task",
-    "followUpDate": "YYYY-MM-DD",
-    "updateLeadStatus": "New or Follow Up or Not Interested or Joined",
-    "addNote": "Note to attach to the lead"
+    "followUpNotes": "",
+    "followUpDate": "",
+    "addNote": ""
   }
 }`;
 
     const genAI = new GoogleGenerativeAI(apiKey);
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-flash-latest",
+      model: "gemini-2.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
       },
@@ -142,7 +234,7 @@ You must respond in JSON format ONLY matching this schema:
       leadId,
       prompt: systemPrompt,
       response: rawResponse,
-      model: "gemini-flash-latest",
+      model: "gemini-2.5-flash",
       tokensUsed: 0, // Free tier / approximate
     });
 
@@ -160,12 +252,21 @@ You must respond in JSON format ONLY matching this schema:
         petAge: aiData.petAge || prevQual.petAge || "",
         city: aiData.city || prevQual.city || "",
         intent: aiData.intent || prevQual.intent || "",
-        budget: aiData.budget || prevQual.budget || "",
         specialRequirements:
           aiData.specialRequirements || prevQual.specialRequirements || "",
         urgency: aiData.urgency || prevQual.urgency || "Medium",
         interestScore: aiData.interestScore ?? prevQual.interestScore ?? 0,
       };
+
+      // Also update the top-level Lead fields from AI qualification
+      const resolvedIntent = aiData.intent || prevQual.intent;
+      if (resolvedIntent) {
+        updatePayload.service = resolvedIntent;
+      }
+      const resolvedCity = aiData.city || prevQual.city;
+      if (resolvedCity) {
+        updatePayload.city = resolvedCity;
+      }
     }
 
     if (parsed.tags && parsed.tags.length > 0) {
@@ -197,12 +298,7 @@ You must respond in JSON format ONLY matching this schema:
       });
     }
 
-    if (
-      parsed.triggerActions?.updateLeadStatus &&
-      parsed.triggerActions.updateLeadStatus !== lead.status
-    ) {
-      updatePayload.status = parsed.triggerActions.updateLeadStatus;
-    }
+    // Note: The AI chatbot is not authorized to update the lead status. Status should remain unchanged until human updates it.
 
     await Lead.findByIdAndUpdate(leadId, updatePayload);
 
@@ -303,7 +399,7 @@ You must return a JSON array containing exactly 3 strings:
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-flash-latest",
+      model: "gemini-2.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
       },
