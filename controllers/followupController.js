@@ -7,9 +7,9 @@ import Notification from "../models/Notification.js";
 export const getFollowups = async (req, res) => {
   try {
     const followups = await Followup.find().sort({ createdAt: -1 });
-    res.json(followups);
+    res.json({ success: true, data: followups });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -51,9 +51,9 @@ export const createFollowup = async (req, res) => {
       });
     }
 
-    res.status(201).json(createdFollowup);
+    res.status(201).json({ success: true, data: createdFollowup });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
@@ -70,11 +70,11 @@ export const updateFollowup = async (req, res) => {
       // Other fields can be updated if needed, but primarily we toggle 'done'
 
       const updatedFollowup = await followup.save();
-      res.json(updatedFollowup);
+      res.json({ success: true, data: updatedFollowup });
     } else {
-      res.status(404).json({ message: "Followup not found" });
+      res.status(404).json({ success: false, message: "Followup not found" });
     }
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ success: false, message: error.message });
   }
 };

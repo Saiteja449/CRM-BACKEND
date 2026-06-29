@@ -11,9 +11,9 @@ import AILog from "../models/AILog.js";
 export const getLeads = async (req, res) => {
   try {
     const leads = await Lead.find({});
-    res.json(leads);
+    res.json({ success: true, data: leads });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -200,13 +200,15 @@ export const getPaginatedLeads = async (req, res) => {
     };
 
     res.json({
+      success: true,
       leads,
       totalCount,
       totalPages: Math.ceil(totalCount / limitNum),
+      currentPage: pageNum,
       tabCounts: counts,
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -219,7 +221,7 @@ export const createLead = async (req, res) => {
       if (existingLead) {
         return res
           .status(400)
-          .json({ message: "A lead with this phone number already exists." });
+          .json({ success: false, message: "A lead with this phone number already exists." });
       }
     }
 
@@ -261,9 +263,9 @@ export const createLead = async (req, res) => {
       targetUsers: targetUsers,
     });
 
-    res.status(201).json(lead);
+    res.status(201).json({ success: true, data: lead });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
@@ -275,7 +277,7 @@ export const updateLead = async (req, res) => {
     const lead = await Lead.findByIdAndUpdate(id, updateData, { new: true });
 
     if (!lead) {
-      return res.status(404).json({ message: "Lead not found" });
+      return res.status(404).json({ success: false, message: "Lead not found" });
     }
 
     if (updateData.status) {
@@ -287,9 +289,9 @@ export const updateLead = async (req, res) => {
       });
     }
 
-    res.json(lead);
+    res.json({ success: true, data: lead });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ success: false, message: error.message });
   }
 };
 
@@ -300,13 +302,14 @@ export const deleteLead = async (req, res) => {
     const lead = await Lead.findByIdAndDelete(id);
 
     if (!lead) {
-      return res.status(404).json({ message: "Lead not found" });
+      return res.status(404).json({ success: false, message: "Lead not found" });
     }
 
     res.json({
-      message: "Lead and associated conversation history removed successfully",
+      success: true,
+      message: "Lead deleted successfully",
     });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ success: false, message: error.message });
   }
 };

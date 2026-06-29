@@ -24,7 +24,7 @@ export const receiveWebsiteLead = async (req, res) => {
     if (existingLead) {
       return res
         .status(400)
-        .json({ message: "A lead with this phone number already exists." });
+        .json({ success: false, message: "A lead with this phone number already exists." });
     }
 
     const leadData = {

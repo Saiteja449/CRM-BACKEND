@@ -37,12 +37,12 @@ export const getNotifications = async (req, res) => {
 
     const hasMore = total > skip + notifications.length;
 
-    res.status(200).json({ notifications: formatted, hasMore });
+    res.status(200).json({ success: true, notifications: formatted, hasMore });
   } catch (error) {
     console.error("Error fetching notifications:", error);
     res
       .status(500)
-      .json({ message: "Server error while fetching notifications" });
+      .json({ success: false, message: "Server error while fetching notifications" });
   }
 };
 
@@ -53,7 +53,7 @@ export const markAsRead = async (req, res) => {
   try {
     const notification = await Notification.findById(req.params.id);
     if (!notification) {
-      return res.status(404).json({ message: "Notification not found" });
+      return res.status(404).json({ success: false, message: "Notification not found" });
     }
 
     if (!notification.readBy.includes(req.user._id)) {
@@ -61,10 +61,10 @@ export const markAsRead = async (req, res) => {
       await notification.save();
     }
 
-    res.status(200).json({ message: "Notification marked as read" });
+    res.status(200).json({ success: true, message: "Notification marked as read" });
   } catch (error) {
     console.error("Error marking notification as read:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
@@ -77,9 +77,9 @@ export const deleteNotification = async (req, res) => {
     // OR we could just have a 'hiddenBy' array.
     // Given the simple requirement, we'll just delete it if the user removes it.
     await Notification.findByIdAndDelete(req.params.id);
-    res.status(200).json({ message: "Notification removed" });
+    res.status(200).json({ success: true, message: "Notification removed" });
   } catch (error) {
     console.error("Error deleting notification:", error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };

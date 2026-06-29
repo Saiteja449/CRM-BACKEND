@@ -15,7 +15,7 @@ export const sendOtp = async (req, res) => {
   const { email } = req.body;
 
   if (!email) {
-    return res.status(400).json({ message: "Please provide an email" });
+    return res.status(400).json({ success: false, message: "Please provide an email" });
   }
 
   try {
@@ -41,32 +41,32 @@ export const sendOtp = async (req, res) => {
       htmlMessage,
     });
 
-    res.status(200).json({ message: "OTP sent successfully to email" });
+    res.status(200).json({ success: true, message: "OTP sent successfully to email" });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error while sending OTP" });
+    res.status(500).json({ success: false, message: "Server error while sending OTP" });
   }
 };
 export const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
 
   if (!email || !otp) {
-    return res.status(400).json({ message: "Please provide email and OTP" });
+    return res.status(400).json({ success: false, message: "Please provide email and OTP" });
   }
 
   try {
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     if (user.otp !== otp) {
-      return res.status(400).json({ message: "Invalid OTP" });
+      return res.status(400).json({ success: false, message: "Invalid OTP" });
     }
 
     if (new Date() > user.otpExpiresAt) {
-      return res.status(400).json({ message: "OTP has expired" });
+      return res.status(400).json({ success: false, message: "OTP has expired" });
     }
 
     user.otp = undefined;
@@ -74,6 +74,7 @@ export const verifyOtp = async (req, res) => {
     await user.save();
 
     res.status(200).json({
+      success: true,
       _id: user._id,
       name: user.name,
       email: user.email,
@@ -82,6 +83,6 @@ export const verifyOtp = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error while verifying OTP" });
+    res.status(500).json({ success: false, message: "Server error while verifying OTP" });
   }
 };
