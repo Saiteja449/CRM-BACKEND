@@ -16,7 +16,7 @@ export const generateAIResponse = async (leadId, incomingText) => {
       console.error(
         "Neither GROQ_API_KEY nor GEMINI_API_KEY is configured in .env!",
       );
-      return "I'll connect you with one of our team members.";
+      return "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
     }
     const lead = await Lead.findById(leadId);
     if (!lead) {
@@ -244,11 +244,41 @@ You must respond in JSON format ONLY matching this schema:
       "meta-llama/llama-prompt-guard-2-22m"
     ];
 
-    if (groqApiKey && groqApiKey !== "your_groq_api_key_here") {
+    if (geminiApiKey) {
+      try {
+        modelNameUsed = "gemini-2.5-flash";
+        console.log(`Attempting Gemini call with model: ${modelNameUsed}...`);
+        const genAI = new GoogleGenerativeAI(geminiApiKey);
+        const model = genAI.getGenerativeModel({
+          model: modelNameUsed,
+          generationConfig: {
+            responseMimeType: "application/json",
+          },
+        });
+        const result = await model.generateContent({
+          contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
+        });
+        const content = result.response.text();
+        try {
+          parsed = JSON.parse(content);
+          rawResponse = content;
+          tokensUsed = result.response.usageMetadata?.totalTokenCount || 0;
+          success = true;
+          console.log(`Tokens used for Gemini (${modelNameUsed}): ${tokensUsed}`);
+          console.log("Gemini call succeeded and returned valid JSON!");
+        } catch (jsonErr) {
+          console.warn(`Gemini returned invalid JSON: ${content}`);
+        }
+      } catch (geminiErr) {
+        console.error("Gemini API call failed:", geminiErr);
+      }
+    }
+
+    if (!success && groqApiKey && groqApiKey !== "your_groq_api_key_here") {
       for (const model of fallbackModels) {
         try {
           modelNameUsed = model;
-          console.log(`Attempting Groq call with model: ${modelNameUsed}...`);
+          console.log(`Attempting Groq fallback call with model: ${modelNameUsed}...`);
           const response = await fetch(
             "https://api.groq.com/openai/v1/chat/completions",
             {
@@ -276,7 +306,8 @@ You must respond in JSON format ONLY matching this schema:
               rawResponse = content;
               tokensUsed = resJson.usage?.total_tokens || 0;
               success = true;
-              console.log(`Groq call succeeded with model: ${modelNameUsed} and returned valid JSON.`);
+              console.log(`Tokens used for Groq (${modelNameUsed}): ${tokensUsed}`);
+              console.log(`Groq fallback call succeeded with model: ${modelNameUsed} and returned valid JSON.`);
               break;
             } catch (jsonErr) {
               console.warn(`Groq model ${modelNameUsed} returned invalid JSON: ${content}. Trying next model...`);
@@ -291,45 +322,16 @@ You must respond in JSON format ONLY matching this schema:
       }
     }
 
-    if (!success && geminiApiKey) {
-      try {
-        modelNameUsed = "gemini-flash-latest";
-        console.log(`Attempting Gemini fallback call with model: ${modelNameUsed}...`);
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
-        const model = genAI.getGenerativeModel({
-          model: modelNameUsed,
-          generationConfig: {
-            responseMimeType: "application/json",
-          },
-        });
-        const result = await model.generateContent({
-          contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
-        });
-        const content = result.response.text();
-        try {
-          parsed = JSON.parse(content);
-          rawResponse = content;
-          tokensUsed = 0;
-          success = true;
-          console.log("Gemini fallback call succeeded and returned valid JSON!");
-        } catch (jsonErr) {
-          console.warn(`Gemini fallback returned invalid JSON: ${content}`);
-        }
-      } catch (geminiErr) {
-        console.error("Gemini API call failed:", geminiErr);
-      }
-    }
-
     if (!success) {
       console.error("All AI models (Groq and Gemini) failed to generate response.");
-      return "I'll connect you with one of our team members.";
+      return "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
     }
 
     console.log("AI Raw JSON Response:", rawResponse);
 
     if (!parsed) {
       parsed = {
-        reply: "I'll connect you with one of our team members.",
+        reply: "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.",
         disableAI: true,
       };
     }
@@ -450,144 +452,10 @@ You must respond in JSON format ONLY matching this schema:
       });
     }
 
-    return parsed.reply || "I'll connect you with one of our team members.";
+    return parsed.reply || "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
   } catch (error) {
     console.error("Error in AI Service generateAIResponse:", error);
-    return "I'll connect you with one of our team members.";
+    return "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
   }
 };
 
-export const getReplySuggestions = async (leadId) => {
-  try {
-    const groqApiKey = process.env.GROQ_API_KEY;
-    const geminiApiKey = process.env.GEMINI_API_KEY;
-    if (!groqApiKey && !geminiApiKey) return [];
-
-    const lead = await Lead.findById(leadId);
-    if (!lead) return [];
-
-    const kbItems = await KnowledgeBase.find({ isActive: true });
-    const kbContext = kbItems
-      .map(
-        (item) =>
-          `[${item.type.toUpperCase()}] ${item.title}:\n${item.content}`,
-      )
-      .join("\n\n");
-
-    const history = await Message.find({ leadId })
-      .sort({ timestamp: 1 })
-      .limit(10);
-
-    const chatHistoryLog = history
-      .map(
-        (h) =>
-          `${h.direction === "incoming" ? "Customer" : "Agent"}: ${h.text}`,
-      )
-      .join("\n");
-
-    const systemPrompt = `You are a helper backend agent for a human representative managing a pet care lead in the CRM.
-Review the knowledge base and the conversation history.
-Provide 3 helpful, distinct, and short reply suggestions (less than 20 words each) that the agent can choose to send next.
-
-Company Knowledge Base:
-${kbContext}
-
-Lead Context:
-- Name: ${lead.name}
-- Status: ${lead.status}
-
-Conversation History:
-${chatHistoryLog}
-
-You must return a JSON array containing exactly 3 strings:
-["Suggestion 1", "Suggestion 2", "Suggestion 3"]`;
-
-    let rawResponse = "";
-    let success = false;
-    let parsed = null;
-
-    const fallbackModels = [
-      "llama-3.3-70b-versatile",
-      "llama-3.1-8b-instant",
-      "meta-llama/llama-prompt-guard-2-22m"
-    ];
-
-    if (groqApiKey && groqApiKey !== "your_groq_api_key_here") {
-      for (const model of fallbackModels) {
-        try {
-          console.log(`Attempting Groq call for reply suggestions with model: ${model}...`);
-          const response = await fetch(
-            "https://api.groq.com/openai/v1/chat/completions",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${groqApiKey}`,
-              },
-              body: JSON.stringify({
-                model: model,
-                messages: [{ role: "user", content: systemPrompt }],
-                response_format: { type: "json_object" },
-              }),
-            },
-          );
-
-          if (response.ok) {
-            const resJson = await response.json();
-            const content = resJson.choices[0].message.content;
-            try {
-              parsed = JSON.parse(content);
-              rawResponse = content;
-              success = true;
-              console.log(`Groq suggestions call succeeded with model: ${model} and returned valid JSON.`);
-              break;
-            } catch (jsonErr) {
-              console.warn(`Groq suggestions model ${model} returned invalid JSON: ${content}. Trying next...`);
-            }
-          } else {
-            const errText = await response.text();
-            console.warn(`Groq suggestions model ${model} failed (status ${response.status}): ${errText}`);
-          }
-        } catch (groqErr) {
-          console.warn(`Groq suggestions model ${model} threw error:`, groqErr);
-        }
-      }
-    }
-
-    if (!success && geminiApiKey) {
-      try {
-        console.log("Attempting Gemini fallback for reply suggestions...");
-        const genAI = new GoogleGenerativeAI(geminiApiKey);
-        const model = genAI.getGenerativeModel({
-          model: "gemini-flash-latest",
-          generationConfig: {
-            responseMimeType: "application/json",
-          },
-        });
-        const result = await model.generateContent({
-          contents: [{ role: "user", parts: [{ text: systemPrompt }] }],
-        });
-        const content = result.response.text();
-        try {
-          parsed = JSON.parse(content);
-          rawResponse = content;
-          success = true;
-          console.log("Gemini suggestions call succeeded and returned valid JSON!");
-        } catch (jsonErr) {
-          console.warn(`Gemini suggestions fallback returned invalid JSON: ${content}`);
-        }
-      } catch (geminiErr) {
-        console.error("Gemini suggestions call failed:", geminiErr);
-      }
-    }
-
-    if (!success || !parsed) {
-      return [];
-    }
-
-    return parsed;
-  } catch (err) {
-    console.error("Failed to generate suggestions:", err);
-    return [];
-  }
-};

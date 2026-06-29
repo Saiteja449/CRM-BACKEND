@@ -11,7 +11,7 @@ import {
   getKB,
   createKB,
   deleteKB,
-  uploadMedia,
+
 } from "../controllers/whatsappController.js";
 
 const router = express.Router();
@@ -21,7 +21,7 @@ router.post("/connect", connectClient);
 router.get("/status", getStatus);
 router.post("/logout", logoutClient);
 router.get("/qr", getQR);
-router.post("/upload", uploadMedia);
+
 
 // Chats and Messages
 router.get("/conversations", getConversations);

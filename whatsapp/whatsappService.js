@@ -220,9 +220,9 @@ const handleIncomingMessage = async (msg) => {
       messageType = "text";
       textContent = msgContent.extendedTextMessage.text || "";
     } else if (msgContent.imageMessage) {
-      messageType = "image";
-      textContent = msgContent.imageMessage.caption || "";
-      mediaUrl = await downloadAndSaveMedia(msg, "image");
+      messageType = "text";
+      textContent = msgContent.imageMessage.caption ? `[Image with caption: ${msgContent.imageMessage.caption}] (Images are disabled)` : "[Image attachment disabled]";
+      mediaUrl = "";
     } else if (msgContent.audioMessage) {
       messageType = "audio";
       textContent = "Voice message";
@@ -492,6 +492,22 @@ const processAIResponse = async (lead, remoteJid, incomingText) => {
 
     // Call Gemini Agent
     const replyText = await generateAIResponse(lead._id, incomingText);
+
+    // Disable AI mode if fallback message is returned
+    const fallbackMessage = "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
+    if (replyText === fallbackMessage) {
+      await Lead.findByIdAndUpdate(lead._id, { aiEnabled: false });
+      const io = getIO();
+      if (io) {
+        io.to(lead._id.toString()).emit("conversation_updated", { leadId: lead._id });
+      }
+      await Notification.create({
+        title: "AI Disabled - Fallback Triggered",
+        message: `AI has been disabled for ${lead.name} (${lead.phone}) because it sent the fallback message.`,
+        type: "lead_update",
+        targetRoles: ["sales manager", "sales person"],
+      });
+    }
 
     // Send the reply message using Baileys
     if (sock) {
