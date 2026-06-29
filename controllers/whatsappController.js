@@ -241,10 +241,7 @@ export const uploadMedia = async (req, res) => {
     const buffer = Buffer.from(base64Data, "base64");
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    const isVercel = !!process.env.VERCEL;
-    const uploadsDir = isVercel
-      ? path.join("/tmp", "uploads")
-      : path.join(__dirname, "..", "uploads");
+    const uploadsDir = path.join(__dirname, "..", "uploads");
 
     if (!fs.existsSync(uploadsDir)) {
       fs.mkdirSync(uploadsDir, { recursive: true });

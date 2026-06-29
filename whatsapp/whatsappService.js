@@ -22,17 +22,10 @@ import { generateAIResponse } from "../ai/aiService.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const isVercel = !!process.env.VERCEL;
-const uploadDir = isVercel
-  ? path.join("/tmp", "uploads")
-  : path.join(__dirname, "..", "uploads");
+const uploadDir = path.join(__dirname, "..", "uploads");
 
 if (!fs.existsSync(uploadDir)) {
-  try {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  } catch (err) {
-    console.error("Failed to create upload directory:", err.message);
-  }
+  fs.mkdirSync(uploadDir, { recursive: true });
 }
 
 let sock = null;
@@ -73,12 +66,6 @@ const updateSessionStatus = async (status, qr = "", phone = "", name = "") => {
 };
 export const connectWhatsApp = async () => {
   try {
-    const isVercel = !!process.env.VERCEL;
-    if (isVercel) {
-      console.log("Running on Vercel Serverless environment - Baileys WebSocket connection skipped.");
-      return;
-    }
-
     const authFolder = path.join(__dirname, "..", "whatsapp_auth_info");
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
