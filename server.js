@@ -34,7 +34,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Middlewares
-app.use(cors());
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      // Allow all origins
+      callback(null, true);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
