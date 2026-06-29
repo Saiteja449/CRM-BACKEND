@@ -4,6 +4,7 @@ import cors from "cors";
 import http from "http";
 import path from "path";
 import { fileURLToPath } from "url";
+import dns from "dns";
 import connectDB from "./configs/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -22,6 +23,11 @@ dotenv.config();
 
 // Connect to database
 connectDB();
+
+console.log("Node version:", process.version);
+dns.lookup("smtp.gmail.com", { all: true }, (err, addresses) => {
+  console.log("DNS Lookup smtp.gmail.com:", err || addresses);
+});
 
 const app = express();
 const server = http.createServer(app);
