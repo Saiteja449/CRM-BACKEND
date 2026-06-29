@@ -15,7 +15,9 @@ export const sendOtp = async (req, res) => {
   const { email } = req.body;
 
   if (!email) {
-    return res.status(400).json({ success: false, message: "Please provide an email" });
+    return res
+      .status(400)
+      .json({ success: false, message: "Please provide an email" });
   }
 
   try {
@@ -34,31 +36,44 @@ export const sendOtp = async (req, res) => {
     const message = `Your login OTP is ${otp}. It is valid for 10 minutes.`;
     const htmlMessage = `<p>Your login OTP is <strong>${otp}</strong>.</p><p>It is valid for 10 minutes.</p>`;
 
-    await sendEmail({
+    const isEmailSent = await sendEmail({
       email: user.email,
       subject: "Petsfolio CRM - Login OTP",
       message,
       htmlMessage,
     });
+    if (!isEmailSent) {
+      return res
+        .status(500)
+        .json({ success: false, message: "Server error while sending OTP" });
+    }
 
-    res.status(200).json({ success: true, message: "OTP sent successfully to email" });
+    res
+      .status(200)
+      .json({ success: true, message: "OTP sent successfully to email" });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ success: false, message: "Server error while sending OTP" });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error while sending OTP" });
   }
 };
 export const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
 
   if (!email || !otp) {
-    return res.status(400).json({ success: false, message: "Please provide email and OTP" });
+    return res
+      .status(400)
+      .json({ success: false, message: "Please provide email and OTP" });
   }
 
   try {
     const user = await User.findOne({ email });
 
     if (!user) {
-      return res.status(404).json({ success: false, message: "User not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     if (user.otp !== otp) {
@@ -66,7 +81,9 @@ export const verifyOtp = async (req, res) => {
     }
 
     if (new Date() > user.otpExpiresAt) {
-      return res.status(400).json({ success: false, message: "OTP has expired" });
+      return res
+        .status(400)
+        .json({ success: false, message: "OTP has expired" });
     }
 
     user.otp = undefined;
@@ -83,6 +100,8 @@ export const verifyOtp = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ success: false, message: "Server error while verifying OTP" });
+    res
+      .status(500)
+      .json({ success: false, message: "Server error while verifying OTP" });
   }
 };
