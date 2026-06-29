@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
+import bcrypt from "bcryptjs";
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -7,8 +8,8 @@ import Notification from "../models/Notification.js";
 export const getUsers = async (req, res) => {
   try {
     const users = await User.find({ role: "sales person" }).select(
-      "-otp -otpExpiresAt",
-    ); // Don't send OTP data
+      "-password",
+    );
     res.status(200).json({ success: true, data: users });
   } catch (error) {
     console.error("Error fetching users:", error);
@@ -20,12 +21,12 @@ export const getUsers = async (req, res) => {
 // @route   POST /api/users
 // @access  Public (for now)
 export const addSalesPerson = async (req, res) => {
-  const { name, email } = req.body;
+  const { name, email, password } = req.body;
 
-  if (!name || !email) {
+  if (!name || !email || !password) {
     return res
       .status(400)
-      .json({ success: false, message: "Please provide both name and email" });
+      .json({ success: false, message: "Please provide name, email, and password" });
   }
 
   try {
@@ -37,9 +38,13 @@ export const addSalesPerson = async (req, res) => {
         .json({ success: false, message: "A representative with this email already exists!" });
     }
 
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
     const user = await User.create({
       name,
       email,
+      password: hashedPassword,
       role: "sales person", // Will be mapped to 'Sales Representative' in frontend
     });
 
