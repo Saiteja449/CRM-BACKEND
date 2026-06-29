@@ -9,8 +9,6 @@ import {
   getWhatsAppStatus,
   sendMessageFromCRM,
 } from "../whatsapp/whatsappService.js";
-import { getReplySuggestions } from "../ai/aiService.js";
-
 // @desc    Connect WhatsApp (starts Baileys client initialization)
 // @route   POST /api/whatsapp/connect
 // @access  Public
@@ -173,23 +171,6 @@ export const toggleAI = async (req, res) => {
         message: `AI response state set to ${aiEnabled} for ${lead.name}`,
         lead,
       });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc    Get AI suggested replies for agent typing
-// @route   POST /api/whatsapp/ai/reply
-// @access  Public
-export const getSuggestions = async (req, res) => {
-  try {
-    const { leadId } = req.body;
-    if (!leadId) {
-      return res.status(400).json({ message: "leadId is required." });
-    }
-
-    const suggestions = await getReplySuggestions(leadId);
-    res.status(200).json({ suggestions });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

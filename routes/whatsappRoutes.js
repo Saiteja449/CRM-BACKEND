@@ -8,7 +8,6 @@ import {
   getMessages,
   sendMessage,
   toggleAI,
-  getSuggestions,
   getKB,
   createKB,
   deleteKB,
@@ -31,7 +30,6 @@ router.post("/message/send", sendMessage);
 
 // AI Automation
 router.post("/ai/toggle", toggleAI);
-router.post("/ai/reply", getSuggestions);
 
 // Knowledge Base Management
 router.route("/knowledge-base").get(getKB).post(createKB);
