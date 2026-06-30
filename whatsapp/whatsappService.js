@@ -362,8 +362,34 @@ const handleIncomingMessage = async (msg) => {
 
     // 6. Asynchronously trigger AI agent response with 4-second debounce
     if (lead.aiEnabled) {
-      console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
-      triggerAIDebounced(lead, remoteJid, textContent);
+      const firstContactTime = lead.joinedAt ? new Date(lead.joinedAt) : new Date();
+      const timeDiff = Date.now() - firstContactTime.getTime();
+      const twentyFourHours = 24 * 60 * 60 * 1000;
+
+      if (timeDiff > twentyFourHours) {
+        // Disable AI
+        lead.aiEnabled = false;
+        await Lead.findByIdAndUpdate(lead._id, { aiEnabled: false });
+
+        await Notification.create({
+          title: "AI Disabled - 24-Hour Expiration",
+          message: `AI has been disabled for ${lead.name} (${lead.phone}) because the 24-hour window from the first message has expired.`,
+          type: "lead_update",
+          targetRoles: ["sales manager", "sales person"],
+        });
+
+        const io = getIO();
+        if (io) {
+          io.to(lead._id.toString()).emit("conversation_updated", {
+            leadId: lead._id,
+            lead,
+          });
+        }
+        console.log(`[DEBUG] 24 hours expired for lead ID: ${lead._id}. Disabling AI.`);
+      } else {
+        console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
+        triggerAIDebounced(lead, remoteJid, textContent);
+      }
     }
   } catch (error) {
     console.error("Error processing incoming WhatsApp message:", error);
@@ -643,4 +669,67 @@ export const getWhatsAppStatus = () => {
     status: connectionStatus,
     qrCode: activeQR,
   };
+};
+
+/**
+ * Send an automated follow-up with an image and caption.
+ */
+export const sendAutomatedFollowup = async (lead, imageUrl, text) => {
+  if (!sock) {
+    throw new Error("WhatsApp client is not connected!");
+  }
+
+  let cleanPhone = lead.phone.replace(/\D/g, "");
+  if (cleanPhone.length === 10) {
+    cleanPhone = "91" + cleanPhone;
+  }
+  const targetJid = `${cleanPhone}@s.whatsapp.net`;
+  
+  // Baileys downloads the image from the URL and sends it as media
+  const sendResult = await sock.sendMessage(targetJid, {
+    image: { url: imageUrl },
+    caption: text
+  });
+
+  const messageId = sendResult.key.id;
+  const timestamp = new Date();
+
+  // Create message record
+  const messageRecord = await Message.create({
+    messageId,
+    leadId: lead._id,
+    sender: "system",
+    senderName: "Automated Follow-up",
+    direction: "outgoing",
+    messageType: "image",
+    mediaUrl: imageUrl,
+    text: text,
+    timestamp,
+    aiGenerated: false,
+    delivered: true,
+    read: false,
+    status: "sent",
+  });
+
+  // Update Conversation details
+  await Conversation.findOneAndUpdate(
+    { leadId: lead._id },
+    {
+      lastMessage: text, // Show caption as last message
+      lastMessageTime: timestamp,
+    },
+  );
+
+  // Emit socket updates
+  const io = getIO();
+  if (io) {
+    io.to(lead._id.toString()).emit("new_message", messageRecord);
+    io.emit("conversation_updated", {
+      leadId: lead._id,
+      lastMessage: text,
+      lastMessageTime: timestamp,
+    });
+  }
+
+  return messageRecord;
 };

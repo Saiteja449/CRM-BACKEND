@@ -122,6 +122,17 @@ const leadSchema = new mongoose.Schema(
     nextAction: {
       type: String,
     },
+    followUpCount: {
+      type: Number,
+      default: 0,
+    },
+    lastFollowUpSentAt: {
+      type: Date,
+    },
+    automatedFollowUpsActive: {
+      type: Boolean,
+      default: true,
+    },
   },
   { timestamps: true },
 );
