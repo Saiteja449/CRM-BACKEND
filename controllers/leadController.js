@@ -367,9 +367,24 @@ export const updateStatusByWebhook = async (req, res) => {
     }
 
     if (!lead) {
-      return res.status(404).json({
-        success: false,
-        message: "Lead not found matching the criteria.",
+      return res
+        .status(404)
+        .json({
+          success: false,
+          message: "Lead not found matching the criteria.",
+        });
+    }
+
+    // Prevent reverting status back to previous stages (e.g. from "Job Assigned" back to "Joined")
+    const funnelOrder = ["New", "Joined", "Job Posted", "Job Assigned"];
+    const currentRank = funnelOrder.indexOf(lead.status);
+    const targetRank = funnelOrder.indexOf(status);
+
+    if (currentRank !== -1 && targetRank !== -1 && currentRank >= targetRank) {
+      return res.status(200).json({
+        success: true,
+        message: `Lead is already at status "${lead.status}" (requested: "${status}"). No update needed.`,
+        data: lead,
       });
     }
 
