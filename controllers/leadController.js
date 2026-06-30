@@ -7,6 +7,7 @@ import Notification from "../models/Notification.js";
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import AILog from "../models/AILog.js";
+import { getIO } from "../socket/socket.js";
 
 export const getLeads = async (req, res) => {
   try {
@@ -219,9 +220,10 @@ export const createLead = async (req, res) => {
     if (leadData.phone) {
       const existingLead = await Lead.findOne({ phone: leadData.phone });
       if (existingLead) {
-        return res
-          .status(400)
-          .json({ success: false, message: "A lead with this phone number already exists." });
+        return res.status(400).json({
+          success: false,
+          message: "A lead with this phone number already exists.",
+        });
       }
     }
 
@@ -277,7 +279,9 @@ export const updateLead = async (req, res) => {
     const lead = await Lead.findByIdAndUpdate(id, updateData, { new: true });
 
     if (!lead) {
-      return res.status(404).json({ success: false, message: "Lead not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Lead not found" });
     }
 
     if (updateData.status) {
@@ -302,7 +306,9 @@ export const deleteLead = async (req, res) => {
     const lead = await Lead.findByIdAndDelete(id);
 
     if (!lead) {
-      return res.status(404).json({ success: false, message: "Lead not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Lead not found" });
     }
 
     res.json({
@@ -311,5 +317,87 @@ export const deleteLead = async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+export const updateStatusByWebhook = async (req, res) => {
+  try {
+    const { phone, email, event } = req.body;
+
+    if (!phone && !email) {
+      return res.status(400).json({
+        success: false,
+        message: "Either phone or email is required.",
+      });
+    }
+
+    if (!event) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Event is required." });
+    }
+
+    let status = "";
+    if (event === "joined") {
+      status = "Joined";
+    } else if (event === "job_posted") {
+      status = "Job Posted";
+    } else if (event === "job_assigned") {
+      status = "Job Assigned";
+    } else {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid event type." });
+    }
+
+    let lead = null;
+
+    if (phone) {
+      const cleanPhone = phone.replace(/\D/g, "");
+      const last10Digits = cleanPhone.slice(-10);
+      lead = await Lead.findOne({
+        $or: [{ phone: cleanPhone }, { phone: new RegExp(last10Digits + "$") }],
+      });
+    }
+
+    if (!lead && email) {
+      lead = await Lead.findOne({
+        email: new RegExp("^" + email.trim() + "$", "i"),
+      });
+    }
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found matching the criteria.",
+      });
+    }
+
+    lead.status = status;
+    await lead.save();
+
+    await Notification.create({
+      title: "Lead Status Webhook Update",
+      message: `Lead ${lead.name} status updated to "${status}" via external booking app webhook event: ${event}.`,
+      type: "lead_update",
+      targetRoles: ["sales manager", "sales person"],
+    });
+
+    const io = getIO();
+    if (io) {
+      io.emit("conversation_updated", {
+        leadId: lead._id,
+        status,
+        lead,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Status successfully updated to "${status}" for lead ${lead.name}.`,
+      data: lead,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
