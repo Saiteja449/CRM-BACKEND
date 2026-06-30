@@ -181,7 +181,9 @@ INSTRUCTIONS:
 
 7. COMPLETION & CLOSING:
    Once all 5 required details (Pet Type, Breed, Age, City, Health Issues) are collected:
-   - Send a short, polite closing message that includes the Assigned Representative's name: ${assignedRep}. For example: "Thank you for all the details! 🎉 ${assignedRep} will reach out to you shortly to finalize everything."
+   - Send a short, polite closing message that includes the Assigned Representative's name: ${assignedRep}. Also share the App Store and Play Store download links and ask them to download our app. For example: "Thank you for all the details! 🎉 ${assignedRep} will reach out to you shortly to finalize everything. In the meantime, please download our app to manage your pet's bookings and profile:
+     App Store: https://apps.apple.com/in/app/petsfolio-pet-parent/id6746559723
+     Play Store: https://play.google.com/store/apps/details?id=com.petsfolio.customer&hl=en_IN"
    - Set "disableAI" to true in the returned JSON so that a human takes over.
    - Do NOT ask any more questions after this.
 
