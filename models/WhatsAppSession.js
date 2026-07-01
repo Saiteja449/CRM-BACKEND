@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 
 const whatsappSessionSchema = new mongoose.Schema(
   {
+    sessionId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
     status: {
       type: String,
       enum: ["disconnected", "qr", "connecting", "connected"],

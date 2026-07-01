@@ -28,7 +28,7 @@
   },
   "nodemonConfig": {
     "ignore": [
-      "whatsapp_auth_info/*",
+      "whatsapp_auth_info*/*",
       "uploads/*",
       "*.log",
       ".git"

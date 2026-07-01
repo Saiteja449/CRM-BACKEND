@@ -28,22 +28,25 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-let sock = null;
-let connectionStatus = "disconnected";
-let activeQR = "";
+const sessions = {}; // map of sessionId -> { sock, status, qrCode, connectedPhone, connectedName }
 export const normalizePhone = (jid) => {
   if (!jid) return "";
   const clean = jid.split("@")[0];
   return clean.replace(/\D/g, "");
 };
-const updateSessionStatus = async (status, qr = "", phone = "", name = "") => {
-  connectionStatus = status;
-  activeQR = qr;
+const updateSessionStatus = async (sessionId, status, qr = "", phone = "", name = "") => {
+  if (!sessions[sessionId]) {
+    sessions[sessionId] = { status: "disconnected" };
+  }
+  sessions[sessionId].status = status;
+  sessions[sessionId].qrCode = qr;
+  if (phone) sessions[sessionId].connectedPhone = phone;
+  if (name) sessions[sessionId].connectedName = name;
 
   try {
-    let session = await WhatsAppSession.findOne();
+    let session = await WhatsAppSession.findOne({ sessionId });
     if (!session) {
-      session = new WhatsAppSession();
+      session = new WhatsAppSession({ sessionId });
     }
     session.status = status;
     session.qrCode = qr;
@@ -54,6 +57,7 @@ const updateSessionStatus = async (status, qr = "", phone = "", name = "") => {
     const io = getIO();
     if (io) {
       io.emit("whatsapp_status", {
+        sessionId,
         status,
         qrCode: qr,
         connectedPhone: phone || session.connectedPhone,
@@ -64,19 +68,23 @@ const updateSessionStatus = async (status, qr = "", phone = "", name = "") => {
     console.error("Failed to update WhatsAppSession in DB:", err);
   }
 };
-export const connectWhatsApp = async () => {
+export const connectWhatsApp = async (sessionId) => {
+  if (!sessionId) sessionId = "device_1";
   try {
-    const authFolder = path.join(__dirname, "..", "whatsapp_auth_info");
+    const authFolder = path.join(__dirname, "..", `whatsapp_auth_info_${sessionId}`);
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     console.log("Initializing WhatsApp connection via Baileys...");
-    updateSessionStatus("connecting");
+    updateSessionStatus(sessionId, "connecting");
 
-    sock = makeWASocket({
+    const sock = makeWASocket({
       auth: state,
       printQRInTerminal: true,
       logger: pino({ level: "silent" }),
     });
+
+    if (!sessions[sessionId]) sessions[sessionId] = {};
+    sessions[sessionId].sock = sock;
 
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
@@ -92,7 +100,7 @@ export const connectWhatsApp = async () => {
 
       if (qr) {
         console.log("New WhatsApp QR code generated. Please scan.");
-        updateSessionStatus("qr", qr);
+        updateSessionStatus(sessionId, "qr", qr);
       }
 
       if (connection === "close") {
@@ -102,12 +110,12 @@ export const connectWhatsApp = async () => {
         const shouldReconnect = statusCode !== 401;
         if (shouldReconnect) {
           console.log("Attempting to reconnect WhatsApp...");
-          setTimeout(() => connectWhatsApp(), 3000);
+          setTimeout(() => connectWhatsApp(sessionId), 3000);
         } else {
           console.log(
             "WhatsApp session logged out. Cleaning up credentials...",
           );
-          logoutWhatsApp();
+          logoutWhatsApp(sessionId);
         }
       } else if (connection === "open") {
         const userJid = sock?.user?.id || "";
@@ -117,7 +125,7 @@ export const connectWhatsApp = async () => {
         console.log(
           `WhatsApp is fully connected. Active on: ${phone} (${name})`,
         );
-        updateSessionStatus("connected", "", phone, name);
+        updateSessionStatus(sessionId, "connected", "", phone, name);
       }
     });
 
@@ -142,7 +150,7 @@ export const connectWhatsApp = async () => {
             console.log(
               `Processing incoming message from: ${msg.key.remoteJid}`,
             );
-            await handleIncomingMessage(msg);
+            await handleIncomingMessage(msg, sessionId);
           } else {
             console.log(
               `Skipping message - fromMe: ${msg.key.fromMe}, type: ${eventType}`,
@@ -155,12 +163,14 @@ export const connectWhatsApp = async () => {
     });
   } catch (error) {
     console.error("Fatal error during WhatsApp initialization:", error);
-    updateSessionStatus("disconnected");
+    updateSessionStatus(sessionId, "disconnected");
   }
 };
 
-export const logoutWhatsApp = async () => {
-  const authFolder = path.join(__dirname, "..", "whatsapp_auth_info");
+export const logoutWhatsApp = async (sessionId) => {
+  if (!sessionId) return;
+  const authFolder = path.join(__dirname, "..", `whatsapp_auth_info_${sessionId}`);
+  const sock = sessions[sessionId]?.sock;
 
   if (sock) {
     try {
@@ -168,7 +178,7 @@ export const logoutWhatsApp = async () => {
     } catch (e) {
       // Socket might be already closed
     }
-    sock = null;
+    sessions[sessionId].sock = null;
   }
 
   // Delete credentials folder
@@ -177,10 +187,10 @@ export const logoutWhatsApp = async () => {
   }
 
   console.log("WhatsApp session terminated and auth files removed.");
-  updateSessionStatus("disconnected", "", "", "");
+  updateSessionStatus(sessionId, "disconnected", "", "", "");
 };
 
-const handleIncomingMessage = async (msg) => {
+const handleIncomingMessage = async (msg, sessionId) => {
   try {
     const remoteJid = msg.key.remoteJid;
     const remoteJidAlt = msg.key.remoteJidAlt;
@@ -388,7 +398,7 @@ const handleIncomingMessage = async (msg) => {
         console.log(`[DEBUG] 24 hours expired for lead ID: ${lead._id}. Disabling AI.`);
       } else {
         console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
-        triggerAIDebounced(lead, remoteJid, textContent);
+        triggerAIDebounced(lead, remoteJid, textContent, sessionId);
       }
     }
   } catch (error) {
@@ -454,7 +464,7 @@ const aiDebounceTimers = {};
 const aiAccumulatedText = {};
 const aiIsProcessing = {};
 
-const triggerAIDebounced = (lead, remoteJid, incomingText) => {
+const triggerAIDebounced = (lead, remoteJid, incomingText, sessionId) => {
   const leadId = lead._id.toString();
 
   if (incomingText) {
@@ -472,7 +482,7 @@ const triggerAIDebounced = (lead, remoteJid, incomingText) => {
   aiDebounceTimers[leadId] = setTimeout(() => {
     if (aiIsProcessing[leadId]) {
       // If AI is currently generating a response for this lead, wait and retry
-      triggerAIDebounced(lead, remoteJid, "");
+      triggerAIDebounced(lead, remoteJid, "", sessionId);
       return;
     }
 
@@ -486,12 +496,12 @@ const triggerAIDebounced = (lead, remoteJid, incomingText) => {
     // Push the processing task to the global sequential queue
     globalAIExecutionQueue.push(async () => {
       try {
-        await processAIResponse(lead, remoteJid, batchedText);
+        await processAIResponse(lead, remoteJid, batchedText, sessionId);
       } finally {
         aiIsProcessing[leadId] = false;
         // Process any messages that arrived while AI was thinking
         if (aiAccumulatedText[leadId]) {
-          triggerAIDebounced(lead, remoteJid, "");
+          triggerAIDebounced(lead, remoteJid, "", sessionId);
         }
       }
     });
@@ -504,7 +514,7 @@ const triggerAIDebounced = (lead, remoteJid, incomingText) => {
 /**
  * Asynchronous worker to trigger the AI response generation and push back.
  */
-const processAIResponse = async (lead, remoteJid, incomingText) => {
+const processAIResponse = async (lead, remoteJid, incomingText, sessionId) => {
   try {
 
     // Emit typing status over socket.io
@@ -536,6 +546,7 @@ const processAIResponse = async (lead, remoteJid, incomingText) => {
     }
 
     // Send the reply message using Baileys
+    const sock = sessions[sessionId]?.sock || Object.values(sessions).find(s => s.status === 'connected')?.sock;
     if (sock) {
       const sendResult = await sock.sendMessage(remoteJid, { text: replyText });
 
@@ -604,6 +615,7 @@ export const sendMessageFromCRM = async (
   messageText,
   senderName = "Agent",
 ) => {
+  const sock = Object.values(sessions).find(s => s.status === 'connected')?.sock;
   if (!sock) {
     throw new Error("WhatsApp client is not connected!");
   }
@@ -665,16 +677,20 @@ export const sendMessageFromCRM = async (
  * Expose connection status getter
  */
 export const getWhatsAppStatus = () => {
-  return {
-    status: connectionStatus,
-    qrCode: activeQR,
-  };
+  return Object.keys(sessions).map(sessionId => ({
+    sessionId,
+    status: sessions[sessionId].status,
+    qrCode: sessions[sessionId].qrCode,
+    connectedPhone: sessions[sessionId].connectedPhone,
+    connectedName: sessions[sessionId].connectedName
+  }));
 };
 
 /**
  * Send an automated follow-up with an image and caption.
  */
 export const sendAutomatedFollowup = async (lead, imageUrl, text) => {
+  const sock = Object.values(sessions).find(s => s.status === 'connected')?.sock;
   if (!sock) {
     throw new Error("WhatsApp client is not connected!");
   }

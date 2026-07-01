@@ -14,7 +14,8 @@ import {
 // @access  Public
 export const connectClient = async (req, res) => {
   try {
-    connectWhatsApp();
+    const { sessionId } = req.body;
+    connectWhatsApp(sessionId);
     res.status(200).json({ message: "WhatsApp connection worker started." });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -26,23 +27,21 @@ export const connectClient = async (req, res) => {
 // @access  Public
 export const getStatus = async (req, res) => {
   try {
-    // First try in-memory status
-    const memoryStatus = getWhatsAppStatus();
+    const memoryStatuses = getWhatsAppStatus(); // Now returns an array
+    const dbSessions = await WhatsAppSession.find();
 
-    // Also check database for persisted state (handles page refresh after connect)
-    const dbSession = await WhatsAppSession.findOne();
-
-    const status = dbSession?.status || memoryStatus.status;
-    const qrCode = memoryStatus.qrCode || dbSession?.qrCode || "";
-    const connectedPhone = dbSession?.connectedPhone || "";
-    const connectedName = dbSession?.connectedName || "";
-
-    res.status(200).json({
-      status,
-      qrCode,
-      connectedPhone,
-      connectedName,
+    const result = memoryStatuses.map((mem) => {
+      const db = dbSessions.find(s => s.sessionId === mem.sessionId);
+      return {
+        sessionId: mem.sessionId,
+        status: db?.status || mem.status,
+        qrCode: mem.qrCode || db?.qrCode || "",
+        connectedPhone: db?.connectedPhone || mem.connectedPhone || "",
+        connectedName: db?.connectedName || mem.connectedName || "",
+      };
     });
+
+    res.status(200).json(result);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
@@ -53,7 +52,8 @@ export const getStatus = async (req, res) => {
 // @access  Public
 export const logoutClient = async (req, res) => {
   try {
-    await logoutWhatsApp();
+    const { sessionId } = req.body;
+    await logoutWhatsApp(sessionId);
     res
       .status(200)
       .json({ message: "WhatsApp disconnected and logged out successfully." });
