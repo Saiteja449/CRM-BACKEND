@@ -84,7 +84,6 @@ export const getPaginatedLeads = async (req, res) => {
         q.status = {
           $in: [
             new RegExp("^price issue$", "i"),
-            new RegExp("^not answered$", "i"),
             new RegExp("^not interested$", "i"),
           ],
         };
@@ -177,7 +176,6 @@ export const getPaginatedLeads = async (req, res) => {
                 status: {
                   $in: [
                     new RegExp("^price issue$", "i"),
-                    new RegExp("^not answered$", "i"),
                     new RegExp("^not interested$", "i"),
                   ],
                 },

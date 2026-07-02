@@ -44,13 +44,14 @@ const leadSchema = new mongoose.Schema(
         "Follow Up",
         "Not Interested",
         "Not Responding",
-        "Not Answered",
+        "Not Attended",
         "Price Issue",
         "Joined",
         "Job Posted",
         "Job Assigned",
         "Active",
         "Closed Won",
+        "Policy Active",
       ],
       default: "New",
     },
@@ -63,6 +64,9 @@ const leadSchema = new mongoose.Schema(
     },
     nextFollowUp: {
       type: String, // Kept as string to easily map to HTML date input format "YYYY-MM-DD"
+    },
+    followupTime: {
+      type: String,
     },
     notes: {
       type: String,
