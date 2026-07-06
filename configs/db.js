@@ -16,7 +16,8 @@ const connectDB = async () => {
       process.exit(0);
     });
 
-    const conn = await mongoose.connect(process.env.MONGODB_URI);
+    const dbUri = process.env.NODE_ENV === "production" ? process.env.MONGODB_URI : process.env.MONGODB_URI_BETA;
+    const conn = await mongoose.connect(dbUri);
     console.log(`MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     console.error(`Error: ${error.message}`);
