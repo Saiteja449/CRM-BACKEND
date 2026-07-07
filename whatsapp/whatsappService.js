@@ -371,6 +371,7 @@ const handleIncomingMessage = async (msg, sessionId) => {
     );
 
     // 6. Asynchronously trigger AI agent response with 4-second debounce
+    /* Temporarily disabled by user request
     if (lead.aiEnabled) {
       const firstContactTime = lead.joinedAt ? new Date(lead.joinedAt) : new Date();
       const timeDiff = Date.now() - firstContactTime.getTime();
@@ -401,6 +402,7 @@ const handleIncomingMessage = async (msg, sessionId) => {
         triggerAIDebounced(lead, remoteJid, textContent, sessionId);
       }
     }
+    */
   } catch (error) {
     console.error("Error processing incoming WhatsApp message:", error);
   }
