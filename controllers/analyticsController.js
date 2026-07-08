@@ -57,3 +57,14 @@ export const getAnalyticsBySalesperson = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+// Gets today's analytics for all salespeople
+export const getTodayAnalyticsForAll = async (req, res) => {
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    const analytics = await TelecallerAnalytics.find({ date: today });
+    res.status(200).json({ success: true, data: analytics });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
