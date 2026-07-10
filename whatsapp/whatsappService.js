@@ -31,10 +31,16 @@ if (!fs.existsSync(uploadDir)) {
 const sessions = {}; // map of sessionId -> { sock, status, qrCode, connectedPhone, connectedName }
 export const normalizePhone = (jid) => {
   if (!jid) return "";
-  const clean = jid.split("@")[0];
+  const clean = jid.split("@")[0].split(":")[0];
   return clean.replace(/\D/g, "");
 };
-const updateSessionStatus = async (sessionId, status, qr = "", phone = "", name = "") => {
+const updateSessionStatus = async (
+  sessionId,
+  status,
+  qr = "",
+  phone = "",
+  name = "",
+) => {
   if (!sessions[sessionId]) {
     sessions[sessionId] = { status: "disconnected" };
   }
@@ -71,7 +77,11 @@ const updateSessionStatus = async (sessionId, status, qr = "", phone = "", name 
 export const connectWhatsApp = async (sessionId) => {
   if (!sessionId) sessionId = "device_1";
   try {
-    const authFolder = path.join(__dirname, "..", `whatsapp_auth_info_${sessionId}`);
+    const authFolder = path.join(
+      __dirname,
+      "..",
+      `whatsapp_auth_info_${sessionId}`,
+    );
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     console.log("Initializing WhatsApp connection via Baileys...");
@@ -85,6 +95,7 @@ export const connectWhatsApp = async (sessionId) => {
 
     if (!sessions[sessionId]) sessions[sessionId] = {};
     sessions[sessionId].sock = sock;
+
 
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
@@ -131,6 +142,8 @@ export const connectWhatsApp = async (sessionId) => {
 
     sock.ev.on("creds.update", saveCreds);
 
+
+
     sock.ev.on("messages.upsert", async (m) => {
       try {
         console.log("=== messages.upsert event received ===");
@@ -146,11 +159,15 @@ export const connectWhatsApp = async (sessionId) => {
           console.log("Message type:", Object.keys(msg.message || {}));
           console.log("Push name:", msg.pushName);
 
-          if (!msg.key.fromMe && eventType === "notify") {
+          if (eventType === "notify") {
             console.log(
-              `Processing incoming message from: ${msg.key.remoteJid}`,
+              `Processing message - fromMe: ${msg.key.fromMe}, remoteJid: ${msg.key.remoteJid}`,
             );
-            await handleIncomingMessage(msg, sessionId);
+            await handleIncomingOrOutgoingMessage(
+              msg,
+              sessionId,
+              msg.key.fromMe,
+            );
           } else {
             console.log(
               `Skipping message - fromMe: ${msg.key.fromMe}, type: ${eventType}`,
@@ -169,7 +186,11 @@ export const connectWhatsApp = async (sessionId) => {
 
 export const logoutWhatsApp = async (sessionId) => {
   if (!sessionId) return;
-  const authFolder = path.join(__dirname, "..", `whatsapp_auth_info_${sessionId}`);
+  const authFolder = path.join(
+    __dirname,
+    "..",
+    `whatsapp_auth_info_${sessionId}`,
+  );
   const sock = sessions[sessionId]?.sock;
 
   if (sock) {
@@ -190,7 +211,7 @@ export const logoutWhatsApp = async (sessionId) => {
   updateSessionStatus(sessionId, "disconnected", "", "", "");
 };
 
-const handleIncomingMessage = async (msg, sessionId) => {
+const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
   try {
     const remoteJid = msg.key.remoteJid;
     const remoteJidAlt = msg.key.remoteJidAlt;
@@ -206,22 +227,63 @@ const handleIncomingMessage = async (msg, sessionId) => {
 
     const phoneJid = remoteJidAlt || remoteJid;
     const phone = normalizePhone(phoneJid);
+
+    // Skip processing if phone is the user's own connected WhatsApp phone number (prevent self-lead generation)
+    const sock = sessions[sessionId]?.sock;
+    const ownPhone = sock?.user?.id ? normalizePhone(sock.user.id) : null;
+    if (
+      ownPhone &&
+      (phone === ownPhone ||
+        ownPhone.endsWith(phone) ||
+        phone.endsWith(ownPhone))
+    ) {
+      console.log(`Skipping self/sync message with own phone: ${phone}`);
+      return;
+    }
+
     const messageId = msg.key.id;
+
+    // Check if message already exists (deduplication)
+    const existingMessage = await Message.findOne({ messageId });
+    if (existingMessage) {
+      console.log(
+        `[DEBUG] Message ${messageId} already exists in DB. Skipping duplicate.`,
+      );
+      return;
+    }
+
     const timestamp = new Date(
       (msg.messageTimestamp || Math.floor(Date.now() / 1000)) * 1000,
     );
     const pushName = msg.pushName || "WhatsApp User";
 
     console.log(
-      `Processing message - Phone: ${phone}, Name: ${pushName}, JID: ${remoteJid}, AltJID: ${remoteJidAlt || "none"}`,
+      `Processing message - Phone: ${phone}, Name: ${pushName}, JID: ${remoteJid}, AltJID: ${remoteJidAlt || "none"}, fromMe: ${fromMe}`,
     );
 
     let messageType = "text";
     let textContent = "";
     let mediaUrl = "";
 
-    const msgContent = msg.message;
+    let msgContent = msg.message;
     if (!msgContent) return;
+
+    // Unwrap nested/wrapped messages (e.g. deviceSentMessage, ephemeralMessage, etc.)
+    while (msgContent) {
+      if (msgContent.deviceSentMessage?.message) {
+        msgContent = msgContent.deviceSentMessage.message;
+      } else if (msgContent.ephemeralMessage?.message) {
+        msgContent = msgContent.ephemeralMessage.message;
+      } else if (msgContent.viewOnceMessage?.message) {
+        msgContent = msgContent.viewOnceMessage.message;
+      } else if (msgContent.viewOnceMessageV2?.message) {
+        msgContent = msgContent.viewOnceMessageV2.message;
+      } else if (msgContent.documentWithCaptionMessage?.message) {
+        msgContent = msgContent.documentWithCaptionMessage.message;
+      } else {
+        break;
+      }
+    }
 
     if (msgContent.conversation) {
       messageType = "text";
@@ -231,7 +293,9 @@ const handleIncomingMessage = async (msg, sessionId) => {
       textContent = msgContent.extendedTextMessage.text || "";
     } else if (msgContent.imageMessage) {
       messageType = "text";
-      textContent = msgContent.imageMessage.caption ? `[Image with caption: ${msgContent.imageMessage.caption}] (Images are disabled)` : "[Image attachment disabled]";
+      textContent = msgContent.imageMessage.caption
+        ? `[Image with caption: ${msgContent.imageMessage.caption}] (Images are disabled)`
+        : "[Image attachment disabled]";
       mediaUrl = "";
     } else if (msgContent.audioMessage) {
       messageType = "audio";
@@ -267,16 +331,19 @@ const handleIncomingMessage = async (msg, sessionId) => {
     let isNewLead = false;
 
     if (!lead) {
-      console.log(`[DEBUG] Lead not found, creating new lead for ${pushName}`);
+      const leadName = fromMe ? phone : (pushName || "WhatsApp User");
+      console.log(`[DEBUG] Lead not found, creating new lead for ${leadName}`);
       isNewLead = true;
       lead = new Lead({
-        name: pushName,
+        name: leadName,
         phone: phone,
         source: "WhatsApp",
         service: "General Enquiry", // Satisfies MongoDB required field
         status: "New",
         joinedAt: new Date(),
-        notes: `Discovered via WhatsApp message: "${textContent.substring(0, 100)}"`,
+        notes: fromMe
+          ? `Created via WhatsApp outgoing message: "${textContent.substring(0, 100)}"`
+          : `Discovered via WhatsApp message: "${textContent.substring(0, 100)}"`,
       });
 
       // Round-robin assignment logic for sales agents
@@ -309,16 +376,39 @@ const handleIncomingMessage = async (msg, sessionId) => {
       const assignedAgent = await User.findOne({ name: lead.assignedTo });
       const targetUsers = assignedAgent ? [assignedAgent._id] : [];
       await Notification.create({
-        title: "New WhatsApp Lead Capture",
-        message: `New WhatsApp lead captured from ${lead.name} (${lead.phone}) and assigned to ${lead.assignedTo}.`,
+        title: fromMe
+          ? "New WhatsApp Outgoing Lead Capture"
+          : "New WhatsApp Lead Capture",
+        message: fromMe
+          ? `New WhatsApp lead captured from outgoing message to ${lead.phone} and assigned to ${lead.assignedTo}.`
+          : `New WhatsApp lead captured from ${lead.name} (${lead.phone}) and assigned to ${lead.assignedTo}.`,
         type: "new_lead",
         targetRoles: ["sales manager"],
         targetUsers: targetUsers,
       });
     } else {
       // Update existing lead timestamps and latest message
+      const updatedFields = { lastMessage: textContent, lastActivity: timestamp };
+      const isPlaceholderName =
+        lead.name === lead.phone ||
+        lead.name === "WhatsApp User" ||
+        lead.name === "WhatsApp Contact" ||
+        !lead.name;
+
+      if (isPlaceholderName) {
+        let betterName = null;
+        if (!fromMe && pushName && pushName !== "WhatsApp User" && pushName !== "WhatsApp Contact") {
+          betterName = pushName;
+        }
+        if (betterName) {
+          updatedFields.name = betterName;
+          lead.name = betterName; // Sync memory instance for socket broadcast
+          console.log(`[DEBUG] Updating lead name from placeholder to '${betterName}'`);
+        }
+      }
+
       await Lead.findByIdAndUpdate(lead._id, {
-        $set: { lastMessage: textContent, lastActivity: timestamp },
+        $set: updatedFields,
       });
     }
 
@@ -326,16 +416,16 @@ const handleIncomingMessage = async (msg, sessionId) => {
     const messageRecord = await Message.create({
       messageId,
       leadId: lead._id,
-      sender: phone,
-      direction: "incoming",
+      sender: fromMe ? "agent" : phone,
+      direction: fromMe ? "outgoing" : "incoming",
       messageType,
       text: textContent,
       mediaUrl,
       timestamp,
       aiGenerated: false,
       delivered: true,
-      read: false,
-      status: "received",
+      read: fromMe ? true : false,
+      status: fromMe ? "sent" : "received",
     });
 
     // 4. Update Conversation session meta
@@ -345,7 +435,12 @@ const handleIncomingMessage = async (msg, sessionId) => {
         leadId: lead._id,
       });
     }
-    conversation.unreadCount += 1;
+
+    if (fromMe) {
+      conversation.unreadCount = 0;
+    } else {
+      conversation.unreadCount += 1;
+    }
     conversation.lastMessage = textContent;
     conversation.lastMessageTime = timestamp;
     await conversation.save();
@@ -371,8 +466,9 @@ const handleIncomingMessage = async (msg, sessionId) => {
     );
 
     // 6. Asynchronously trigger AI agent response with 4-second debounce
+    // (Only trigger AI if the message is INCOMING, i.e., not fromMe)
     /* Temporarily disabled by user request
-    if (lead.aiEnabled) {
+    if (!fromMe && lead.aiEnabled) {
       const firstContactTime = lead.joinedAt ? new Date(lead.joinedAt) : new Date();
       const timeDiff = Date.now() - firstContactTime.getTime();
       const twentyFourHours = 24 * 60 * 60 * 1000;
@@ -404,7 +500,10 @@ const handleIncomingMessage = async (msg, sessionId) => {
     }
     */
   } catch (error) {
-    console.error("Error processing incoming WhatsApp message:", error);
+    console.error(
+      "Error processing incoming/outgoing WhatsApp message:",
+      error,
+    );
   }
 };
 
@@ -488,7 +587,9 @@ const triggerAIDebounced = (lead, remoteJid, incomingText, sessionId) => {
       return;
     }
 
-    const batchedText = aiAccumulatedText[leadId] ? aiAccumulatedText[leadId].trim() : "";
+    const batchedText = aiAccumulatedText[leadId]
+      ? aiAccumulatedText[leadId].trim()
+      : "";
     if (!batchedText) return;
 
     aiIsProcessing[leadId] = true;
@@ -518,7 +619,6 @@ const triggerAIDebounced = (lead, remoteJid, incomingText, sessionId) => {
  */
 const processAIResponse = async (lead, remoteJid, incomingText, sessionId) => {
   try {
-
     // Emit typing status over socket.io
     const io = getIO();
     if (io) {
@@ -532,12 +632,15 @@ const processAIResponse = async (lead, remoteJid, incomingText, sessionId) => {
     const replyText = await generateAIResponse(lead._id, incomingText);
 
     // Disable AI mode if fallback message is returned
-    const fallbackMessage = "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
+    const fallbackMessage =
+      "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
     if (replyText === fallbackMessage) {
       await Lead.findByIdAndUpdate(lead._id, { aiEnabled: false });
       const io = getIO();
       if (io) {
-        io.to(lead._id.toString()).emit("conversation_updated", { leadId: lead._id });
+        io.to(lead._id.toString()).emit("conversation_updated", {
+          leadId: lead._id,
+        });
       }
       await Notification.create({
         title: "AI Disabled - Fallback Triggered",
@@ -548,7 +651,9 @@ const processAIResponse = async (lead, remoteJid, incomingText, sessionId) => {
     }
 
     // Send the reply message using Baileys
-    const sock = sessions[sessionId]?.sock || Object.values(sessions).find(s => s.status === 'connected')?.sock;
+    const sock =
+      sessions[sessionId]?.sock ||
+      Object.values(sessions).find((s) => s.status === "connected")?.sock;
     if (sock) {
       const sendResult = await sock.sendMessage(remoteJid, { text: replyText });
 
@@ -617,7 +722,9 @@ export const sendMessageFromCRM = async (
   messageText,
   senderName = "Agent",
 ) => {
-  const sock = Object.values(sessions).find(s => s.status === 'connected')?.sock;
+  const sock = Object.values(sessions).find(
+    (s) => s.status === "connected",
+  )?.sock;
   if (!sock) {
     throw new Error("WhatsApp client is not connected!");
   }
@@ -679,12 +786,12 @@ export const sendMessageFromCRM = async (
  * Expose connection status getter
  */
 export const getWhatsAppStatus = () => {
-  return Object.keys(sessions).map(sessionId => ({
+  return Object.keys(sessions).map((sessionId) => ({
     sessionId,
     status: sessions[sessionId].status,
     qrCode: sessions[sessionId].qrCode,
     connectedPhone: sessions[sessionId].connectedPhone,
-    connectedName: sessions[sessionId].connectedName
+    connectedName: sessions[sessionId].connectedName,
   }));
 };
 
@@ -692,7 +799,9 @@ export const getWhatsAppStatus = () => {
  * Send an automated follow-up with an image and caption.
  */
 export const sendAutomatedFollowup = async (lead, imageUrl, text) => {
-  const sock = Object.values(sessions).find(s => s.status === 'connected')?.sock;
+  const sock = Object.values(sessions).find(
+    (s) => s.status === "connected",
+  )?.sock;
   if (!sock) {
     throw new Error("WhatsApp client is not connected!");
   }
@@ -702,11 +811,11 @@ export const sendAutomatedFollowup = async (lead, imageUrl, text) => {
     cleanPhone = "91" + cleanPhone;
   }
   const targetJid = `${cleanPhone}@s.whatsapp.net`;
-  
+
   // Baileys downloads the image from the URL and sends it as media
   const sendResult = await sock.sendMessage(targetJid, {
     image: { url: imageUrl },
-    caption: text
+    caption: text,
   });
 
   const messageId = sendResult.key.id;
