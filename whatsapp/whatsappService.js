@@ -34,7 +34,13 @@ export const normalizePhone = (jid) => {
   const clean = jid.split("@")[0];
   return clean.replace(/\D/g, "");
 };
-const updateSessionStatus = async (sessionId, status, qr = "", phone = "", name = "") => {
+const updateSessionStatus = async (
+  sessionId,
+  status,
+  qr = "",
+  phone = "",
+  name = "",
+) => {
   if (!sessions[sessionId]) {
     sessions[sessionId] = { status: "disconnected" };
   }
@@ -71,7 +77,11 @@ const updateSessionStatus = async (sessionId, status, qr = "", phone = "", name 
 export const connectWhatsApp = async (sessionId) => {
   if (!sessionId) sessionId = "device_1";
   try {
-    const authFolder = path.join(__dirname, "..", `whatsapp_auth_info_${sessionId}`);
+    const authFolder = path.join(
+      __dirname,
+      "..",
+      `whatsapp_auth_info_${sessionId}`,
+    );
     const { state, saveCreds } = await useMultiFileAuthState(authFolder);
 
     console.log("Initializing WhatsApp connection via Baileys...");
@@ -146,9 +156,9 @@ export const connectWhatsApp = async (sessionId) => {
           console.log("Message type:", Object.keys(msg.message || {}));
           console.log("Push name:", msg.pushName);
 
-          if (!msg.key.fromMe && eventType === "notify") {
+          if (eventType === "notify" || eventType === "append") {
             console.log(
-              `Processing incoming message from: ${msg.key.remoteJid}`,
+              `Processing message from: ${msg.key.remoteJid} (fromMe: ${msg.key.fromMe})`,
             );
             await handleIncomingMessage(msg, sessionId);
           } else {
@@ -169,7 +179,11 @@ export const connectWhatsApp = async (sessionId) => {
 
 export const logoutWhatsApp = async (sessionId) => {
   if (!sessionId) return;
-  const authFolder = path.join(__dirname, "..", `whatsapp_auth_info_${sessionId}`);
+  const authFolder = path.join(
+    __dirname,
+    "..",
+    `whatsapp_auth_info_${sessionId}`,
+  );
   const sock = sessions[sessionId]?.sock;
 
   if (sock) {
@@ -206,6 +220,25 @@ const handleIncomingMessage = async (msg, sessionId) => {
 
     const phoneJid = remoteJidAlt || remoteJid;
     const phone = normalizePhone(phoneJid);
+
+    // Skip messages sent to own number
+    const sock = sessions[sessionId]?.sock;
+    if (sock && sock.user && sock.user.id) {
+      const myPhone = sock.user.id
+        .split(":")[0]
+        .split("@")[0]
+        .replace(/\D/g, "");
+      // Direct comparison, ignoring any extra characters
+      if (
+        phone === myPhone ||
+        phone.endsWith(myPhone) ||
+        myPhone.endsWith(phone)
+      ) {
+        console.log(`[DEBUG] Skipping message sent to own number: ${phone}`);
+        return;
+      }
+    }
+
     const messageId = msg.key.id;
     const timestamp = new Date(
       (msg.messageTimestamp || Math.floor(Date.now() / 1000)) * 1000,
@@ -231,7 +264,9 @@ const handleIncomingMessage = async (msg, sessionId) => {
       textContent = msgContent.extendedTextMessage.text || "";
     } else if (msgContent.imageMessage) {
       messageType = "text";
-      textContent = msgContent.imageMessage.caption ? `[Image with caption: ${msgContent.imageMessage.caption}] (Images are disabled)` : "[Image attachment disabled]";
+      textContent = msgContent.imageMessage.caption
+        ? `[Image with caption: ${msgContent.imageMessage.caption}] (Images are disabled)`
+        : "[Image attachment disabled]";
       mediaUrl = "";
     } else if (msgContent.audioMessage) {
       messageType = "audio";
@@ -323,11 +358,20 @@ const handleIncomingMessage = async (msg, sessionId) => {
     }
 
     // 3. Create message record
+    const existingMsg = await Message.findOne({ messageId });
+    if (existingMsg) {
+      console.log(
+        `[DEBUG] Message ${messageId} already exists in DB. Skipping to avoid duplicates.`,
+      );
+      return;
+    }
+
+    const isFromMe = msg.key.fromMe;
     const messageRecord = await Message.create({
       messageId,
       leadId: lead._id,
-      sender: phone,
-      direction: "incoming",
+      sender: isFromMe ? "petsfolio user" : phone,
+      direction: isFromMe ? "outgoing" : "incoming",
       messageType,
       text: textContent,
       mediaUrl,
@@ -335,7 +379,7 @@ const handleIncomingMessage = async (msg, sessionId) => {
       aiGenerated: false,
       delivered: true,
       read: false,
-      status: "received",
+      status: isFromMe ? "sent" : "received",
     });
 
     // 4. Update Conversation session meta
@@ -371,8 +415,10 @@ const handleIncomingMessage = async (msg, sessionId) => {
     );
 
     // 6. Asynchronously trigger AI agent response with 4-second debounce
-    if (lead.aiEnabled) {
-      const firstContactTime = lead.joinedAt ? new Date(lead.joinedAt) : new Date();
+    if (!isFromMe && lead.aiEnabled) {
+      const firstContactTime = lead.joinedAt
+        ? new Date(lead.joinedAt)
+        : new Date();
       const timeDiff = Date.now() - firstContactTime.getTime();
       const twentyFourHours = 24 * 60 * 60 * 1000;
 
@@ -395,7 +441,9 @@ const handleIncomingMessage = async (msg, sessionId) => {
             lead,
           });
         }
-        console.log(`[DEBUG] 24 hours expired for lead ID: ${lead._id}. Disabling AI.`);
+        console.log(
+          `[DEBUG] 24 hours expired for lead ID: ${lead._id}. Disabling AI.`,
+        );
       } else {
         console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
         triggerAIDebounced(lead, remoteJid, textContent, sessionId);
@@ -486,7 +534,9 @@ const triggerAIDebounced = (lead, remoteJid, incomingText, sessionId) => {
       return;
     }
 
-    const batchedText = aiAccumulatedText[leadId] ? aiAccumulatedText[leadId].trim() : "";
+    const batchedText = aiAccumulatedText[leadId]
+      ? aiAccumulatedText[leadId].trim()
+      : "";
     if (!batchedText) return;
 
     aiIsProcessing[leadId] = true;
@@ -516,7 +566,6 @@ const triggerAIDebounced = (lead, remoteJid, incomingText, sessionId) => {
  */
 const processAIResponse = async (lead, remoteJid, incomingText, sessionId) => {
   try {
-
     // Emit typing status over socket.io
     const io = getIO();
     if (io) {
@@ -530,12 +579,15 @@ const processAIResponse = async (lead, remoteJid, incomingText, sessionId) => {
     const replyText = await generateAIResponse(lead._id, incomingText);
 
     // Disable AI mode if fallback message is returned
-    const fallbackMessage = "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
+    const fallbackMessage =
+      "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
     if (replyText === fallbackMessage) {
       await Lead.findByIdAndUpdate(lead._id, { aiEnabled: false });
       const io = getIO();
       if (io) {
-        io.to(lead._id.toString()).emit("conversation_updated", { leadId: lead._id });
+        io.to(lead._id.toString()).emit("conversation_updated", {
+          leadId: lead._id,
+        });
       }
       await Notification.create({
         title: "AI Disabled - Fallback Triggered",
@@ -546,7 +598,9 @@ const processAIResponse = async (lead, remoteJid, incomingText, sessionId) => {
     }
 
     // Send the reply message using Baileys
-    const sock = sessions[sessionId]?.sock || Object.values(sessions).find(s => s.status === 'connected')?.sock;
+    const sock =
+      sessions[sessionId]?.sock ||
+      Object.values(sessions).find((s) => s.status === "connected")?.sock;
     if (sock) {
       const sendResult = await sock.sendMessage(remoteJid, { text: replyText });
 
@@ -615,7 +669,9 @@ export const sendMessageFromCRM = async (
   messageText,
   senderName = "Agent",
 ) => {
-  const sock = Object.values(sessions).find(s => s.status === 'connected')?.sock;
+  const sock = Object.values(sessions).find(
+    (s) => s.status === "connected",
+  )?.sock;
   if (!sock) {
     throw new Error("WhatsApp client is not connected!");
   }
@@ -636,7 +692,7 @@ export const sendMessageFromCRM = async (
   const messageRecord = await Message.create({
     messageId,
     leadId: lead._id,
-    sender: "agent",
+    sender: "petsfolio user",
     senderName,
     direction: "outgoing",
     messageType: "text",
@@ -677,12 +733,12 @@ export const sendMessageFromCRM = async (
  * Expose connection status getter
  */
 export const getWhatsAppStatus = () => {
-  return Object.keys(sessions).map(sessionId => ({
+  return Object.keys(sessions).map((sessionId) => ({
     sessionId,
     status: sessions[sessionId].status,
     qrCode: sessions[sessionId].qrCode,
     connectedPhone: sessions[sessionId].connectedPhone,
-    connectedName: sessions[sessionId].connectedName
+    connectedName: sessions[sessionId].connectedName,
   }));
 };
 
@@ -690,7 +746,9 @@ export const getWhatsAppStatus = () => {
  * Send an automated follow-up with an image and caption.
  */
 export const sendAutomatedFollowup = async (lead, imageUrl, text) => {
-  const sock = Object.values(sessions).find(s => s.status === 'connected')?.sock;
+  const sock = Object.values(sessions).find(
+    (s) => s.status === "connected",
+  )?.sock;
   if (!sock) {
     throw new Error("WhatsApp client is not connected!");
   }
@@ -700,11 +758,11 @@ export const sendAutomatedFollowup = async (lead, imageUrl, text) => {
     cleanPhone = "91" + cleanPhone;
   }
   const targetJid = `${cleanPhone}@s.whatsapp.net`;
-  
+
   // Baileys downloads the image from the URL and sends it as media
   const sendResult = await sock.sendMessage(targetJid, {
     image: { url: imageUrl },
-    caption: text
+    caption: text,
   });
 
   const messageId = sendResult.key.id;

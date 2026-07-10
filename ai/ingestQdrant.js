@@ -2,7 +2,7 @@ import { QdrantClient } from "@qdrant/js-client-rest";
 import { QdrantVectorStore } from "@langchain/qdrant";
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import { DocxLoader } from "@langchain/community/document_loaders/fs/docx";
+import { PDFLoader } from "@langchain/community/document_loaders/fs/pdf";
 import path from "path";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
@@ -27,13 +27,13 @@ async function ingestToQdrant() {
       throw new Error("Missing GEMINI_API_KEY in .env");
     }
 
-    const docPath = path.join(__dirname, "../data/Pet Services Booking Application (1).docx");
+    const docPath = path.join(__dirname, "../data/Petsfolio Knowledge Base.pdf");
     if (!fs.existsSync(docPath)) {
       throw new Error(`Document not found at ${docPath}`);
     }
 
     console.log("Loading document...");
-    const loader = new DocxLoader(docPath);
+    const loader = new PDFLoader(docPath);
     const docs = await loader.load();
 
     console.log("Splitting text into chunks...");
