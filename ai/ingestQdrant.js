@@ -27,7 +27,7 @@ async function ingestToQdrant() {
       throw new Error("Missing GEMINI_API_KEY in .env");
     }
 
-    const docPath = path.join(__dirname, "../data/Petsfolio Knowledge Base.pdf");
+    const docPath = path.join(__dirname, "../data/Petsfolio Document (1).pdf");
     if (!fs.existsSync(docPath)) {
       throw new Error(`Document not found at ${docPath}`);
     }
