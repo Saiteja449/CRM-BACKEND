@@ -14,6 +14,8 @@ const __dirname = path.dirname(__filename);
 // Load env vars
 dotenv.config({ path: path.join(__dirname, "../.env") });
 
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function ingestToQdrant() {
   try {
     const qdrantUrl = process.env.CLUSTER_ENDPOINT;
@@ -27,7 +29,10 @@ async function ingestToQdrant() {
       throw new Error("Missing GEMINI_API_KEY in .env");
     }
 
-    const docPath = path.join(__dirname, "../data/Petsfolio Document (1).pdf");
+    const docPath = path.join(
+      __dirname,
+      "../data/Petsfolio Client Application Rag Application copy.pdf",
+    );
     if (!fs.existsSync(docPath)) {
       throw new Error(`Document not found at ${docPath}`);
     }
@@ -54,14 +59,36 @@ async function ingestToQdrant() {
     const embeddings = new GoogleGenerativeAIEmbeddings({
       apiKey: geminiApiKey,
       model: "gemini-embedding-2",
+      maxRetries: 3,
     });
 
-    console.log(`Uploading ${splitDocs.length} chunks to Qdrant collection '${collectionName}'...`);
-    
-    await QdrantVectorStore.fromDocuments(splitDocs, embeddings, {
-      client,
-      collectionName,
-    });
+    console.log(
+      `Uploading ${splitDocs.length} chunks to Qdrant collection '${collectionName}' in batches...`,
+    );
+
+    const BATCH_SIZE = 25;
+    const DELAY_MS = 15000; // 15 seconds per batch of 25 = 100 per minute
+
+    // We can use an existing collection or QdrantVectorStore.fromDocuments creates/upserts
+    for (let i = 0; i < splitDocs.length; i += BATCH_SIZE) {
+      const batch = splitDocs.slice(i, i + BATCH_SIZE);
+      console.log(
+        `Processing batch ${i / BATCH_SIZE + 1} (${batch.length} chunks)...`,
+      );
+
+      // Ingest the batch
+      await QdrantVectorStore.fromDocuments(batch, embeddings, {
+        client,
+        collectionName,
+      });
+
+      if (i + BATCH_SIZE < splitDocs.length) {
+        console.log(
+          `Waiting ${DELAY_MS / 1000} seconds to respect rate limits...`,
+        );
+        await delay(DELAY_MS);
+      }
+    }
 
     console.log("Successfully ingested documents into Qdrant!");
   } catch (error) {

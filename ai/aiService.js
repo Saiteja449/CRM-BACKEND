@@ -1,4 +1,7 @@
-import { GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import {
+  GoogleGenerativeAIEmbeddings,
+  ChatGoogleGenerativeAI,
+} from "@langchain/google-genai";
 import { QdrantVectorStore } from "@langchain/qdrant";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { z } from "zod";
@@ -23,13 +26,15 @@ let qdrantVectorStore = null;
 
 const initVectorStore = async () => {
   if (qdrantVectorStore) return qdrantVectorStore;
-  
+
   try {
     const qdrantUrl = process.env.CLUSTER_ENDPOINT;
     const qdrantApiKey = process.env.QDRANT_API_KEY;
 
     if (!qdrantUrl || !qdrantApiKey) {
-      console.warn("QDRANT_URL or QDRANT_API_KEY not found in .env. RAG context will be empty.");
+      console.warn(
+        "QDRANT_URL or QDRANT_API_KEY not found in .env. RAG context will be empty.",
+      );
       return null;
     }
 
@@ -57,42 +62,112 @@ const initVectorStore = async () => {
 
 // Define Structured Output Schema
 const qualificationSchema = z.object({
-  reply: z.string().describe("Your reply text to the user. Exactly ONE question per message. NO small talk."),
+  reply: z
+    .string()
+    .describe(
+      "Your reply text to the user. Provide comprehensive answers and guide the user naturally without forcing unnecessary questions.",
+    ),
   qualification: z.object({
-    petType: z.string().default("").describe("Type of pet (e.g., Dog, Cat). Empty string if not mentioned."),
-    breed: z.string().default("").describe("Breed of the pet. Empty string if not mentioned."),
-    petAge: z.string().default("").describe("Age of the pet. Empty string if not mentioned."),
-    city: z.string().default("").describe("City of the user. Empty string if not mentioned."),
-    intent: z.string().default("").describe("Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance). Empty string if not mentioned."),
-    specialRequirements: z.string().default("").describe("Health issues, allergies, etc. 'None' if specified none, empty string if not mentioned."),
-    urgency: z.string().default("Medium").describe("High, Medium, or Low urgency based on context."),
-    interestScore: z.number().default(5).describe("1 to 10 interest score based on engagement.")
+    petType: z
+      .string()
+      .default("")
+      .describe(
+        "Type of pet (e.g., Dog, Cat). Return empty string if not mentioned in the current input.",
+      ),
+    breed: z
+      .string()
+      .default("")
+      .describe(
+        "Breed of the pet. Return empty string if not mentioned in the current input.",
+      ),
+    petAge: z
+      .string()
+      .default("")
+      .describe(
+        "Age of the pet. Return empty string if not mentioned in the current input.",
+      ),
+    city: z
+      .string()
+      .default("")
+      .describe(
+        "City of the user. Return empty string if not mentioned in the current input.",
+      ),
+    intent: z
+      .string()
+      .default("")
+      .describe(
+        "Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance). Return empty string if not mentioned in the current input.",
+      ),
+    specialRequirements: z
+      .string()
+      .default("")
+      .describe(
+        "Health issues, allergies, etc. 'None' if specified none, empty string if not mentioned.",
+      ),
+    urgency: z
+      .string()
+      .default("Medium")
+      .describe("High, Medium, or Low urgency based on context."),
+    interestScore: z
+      .number()
+      .default(5)
+      .describe("1 to 10 interest score based on engagement."),
   }),
-  tags: z.array(z.string()).default([]).describe("Relevant tags (e.g., 'Hot Lead', 'Interested')."),
-  disableAI: z.boolean().default(false).describe("Set to true if user asks for human or if all 5 required details are collected."),
-  summary: z.string().default("").describe("One sentence summary of the conversation so far."),
-  sentiment: z.string().default("Neutral").describe("Positive, Neutral, or Negative."),
-  probabilityOfConversion: z.number().default(50).describe("0 to 100 estimated probability."),
+  tags: z
+    .array(z.string())
+    .default([])
+    .describe("Relevant tags (e.g., 'Hot Lead', 'Interested')."),
+  disableAI: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Set to true if user asks for human or if all 5 required details are collected.",
+    ),
+  summary: z
+    .string()
+    .default("")
+    .describe("One sentence summary of the conversation so far."),
+  sentiment: z
+    .string()
+    .default("Neutral")
+    .describe("Positive, Neutral, or Negative."),
+  probabilityOfConversion: z
+    .number()
+    .default(50)
+    .describe("0 to 100 estimated probability."),
   nextAction: z.string().default("").describe("Next step for the sales team."),
-  triggerActions: z.object({
-    createFollowUp: z.boolean().default(false).describe("Set true if user asked for a callback."),
-    followUpNotes: z.string().default("").describe("Notes for the callback."),
-    followUpDate: z.string().default("").describe("Date string for follow up if requested."),
-    addNote: z.string().default("").describe("Any specific notes for the CRM lead record.")
-  }).default({
-    createFollowUp: false,
-    followUpNotes: "",
-    followUpDate: "",
-    addNote: ""
-  })
+  triggerActions: z
+    .object({
+      createFollowUp: z
+        .boolean()
+        .default(false)
+        .describe("Set true if user asked for a callback."),
+      followUpNotes: z.string().default("").describe("Notes for the callback."),
+      followUpDate: z
+        .string()
+        .default("")
+        .describe("Date string for follow up if requested."),
+      addNote: z
+        .string()
+        .default("")
+        .describe("Any specific notes for the CRM lead record."),
+    })
+    .default({
+      createFollowUp: false,
+      followUpNotes: "",
+      followUpDate: "",
+      addNote: "",
+    }),
 });
 
 export const generateAIResponse = async (leadId, incomingText) => {
   try {
     const geminiApiKey = process.env.GEMINI_API_KEY;
+
     if (!geminiApiKey) {
-      console.error("GEMINI_API_KEY is not configured in .env!");
-      return "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
+      console.error(
+        "GEMINI_API_KEY is not defined in the environment variables.",
+      );
     }
 
     const lead = await Lead.findById(leadId);
@@ -103,15 +178,20 @@ export const generateAIResponse = async (leadId, incomingText) => {
     // Auto-assign representative if currently Unassigned or not set
     let assignedRep = lead.assignedTo;
     if (!assignedRep || assignedRep === "Unassigned") {
-      const representatives = await User.find({ role: "sales person" }).sort({ _id: 1 });
+      const representatives = await User.find({ role: "sales person" }).sort({
+        _id: 1,
+      });
       if (representatives && representatives.length > 0) {
         let state = await AssignmentState.findOne({ key: "leadAssignment" });
         if (!state) {
-          state = await AssignmentState.create({ key: "leadAssignment", lastAssignedIndex: -1 });
+          state = await AssignmentState.create({
+            key: "leadAssignment",
+            lastAssignedIndex: -1,
+          });
         }
         let nextIndex = state.lastAssignedIndex + 1;
         if (nextIndex >= representatives.length) nextIndex = 0;
-        
+
         assignedRep = representatives[nextIndex].name;
         state.lastAssignedIndex = nextIndex;
         await state.save();
@@ -139,11 +219,13 @@ export const generateAIResponse = async (leadId, incomingText) => {
     let ragContext = "";
     if (vs) {
       const results = await vs.similaritySearch(incomingText, 4);
-      ragContext = results.map(r => r.pageContent).join("\n\n");
+      ragContext = results.map((r) => r.pageContent).join("\n\n");
     }
 
     // History
-    const history = await Message.find({ leadId }).sort({ timestamp: 1 }).limit(4);
+    const history = await Message.find({ leadId })
+      .sort({ timestamp: 1 })
+      .limit(4);
     const formattedHistory = history.map((msg) => ({
       role: msg.direction === "incoming" ? "user" : "model",
       text: msg.text,
@@ -152,53 +234,41 @@ export const generateAIResponse = async (leadId, incomingText) => {
       .map((h) => `${h.role === "user" ? "Customer" : "AI Agent"}: ${h.text}`)
       .join("\n");
 
-    const lastAgentMessage = [...formattedHistory].reverse().find((h) => h.role === "model");
-    const lastAgentMessageText = lastAgentMessage ? lastAgentMessage.text : "(none — this is the first message to this lead)";
+    const lastAgentMessage = [...formattedHistory]
+      .reverse()
+      .find((h) => h.role === "model");
+    const lastAgentMessageText = lastAgentMessage
+      ? lastAgentMessage.text
+      : "(none — this is the first message to this lead)";
 
-    const systemPrompt = `You are an intake agent for Petsfolio, a premium pet care and services company. You speak on behalf of the Petsfolio team.
-Your ONLY job is to efficiently collect the information needed to register the customer's service requirement, and answer their questions using ONLY the KNOWLEDGE BASE provided.
+    const systemPrompt = `You are Petsfolio's AI assistant.
 
-COMPANY KNOWLEDGE BASE (Petsfolio Documentation):
+KNOWLEDGE BASE:
 ${ragContext}
 
-DATA COLLECTION RULES:
-For all services we offer, you MUST collect the following 5 details from the user:
-1. Pet Type (Dog / Cat)
-2. Pet Breed
-3. Pet Age
-4. City
-5. Health Issues (allergies, skin conditions, illnesses, special requirements, etc. If none, write "None").
-Do NOT consider collection complete until all these 5 details are collected.
-
 LEAD CONTEXT:
-- Name: ${lead.name}
-- Phone: ${lead.phone}
-- Assigned Representative: ${assignedRep}
-- Status: ${lead.status || "New"}
-- Already Collected Details:
-  * Service: ${lead.aiQualification?.intent || "Missing"}
-  * City: ${lead.aiQualification?.city || "Missing"}
-  * Pet Type: ${lead.aiQualification?.petType || "Missing"}
-  * Breed: ${lead.aiQualification?.breed || "Missing"}
-  * Pet Age: ${lead.aiQualification?.petAge || "Missing"}
-  * Health Issues: ${lead.aiQualification?.specialRequirements || "Missing"}
+Name: ${lead.name} | Phone: ${lead.phone} | Rep: ${assignedRep}
+Already Collected:
+- Service (intent): ${lead.aiQualification?.intent || "Missing"}
+- City: ${lead.aiQualification?.city || "Missing"}
+- Pet Type: ${lead.aiQualification?.petType || "Missing"}
 
-CONVERSATION HISTORY:
-${chatHistoryLog || "(No prior history)"}
+HISTORY:
+${chatHistoryLog || "(None)"}
 
-LAST QUESTION YOU ASKED:
-"${lastAgentMessageText}"
+LAST AGENT MSG: "${lastAgentMessageText}"
+USER MSG: "${incomingText}"
 
-LATEST CUSTOMER MESSAGE:
-"${incomingText}"
-
-INSTRUCTIONS:
-1. EXTRACT FIRST, THEN ASK: Before asking any question, extract any details the customer has already provided.
-2. ONE QUESTION PER MESSAGE: Ask only one question at a time.
-3. NEVER REPEAT: Do not repeat a question you already asked.
-4. STAY ON TASK: No small talk. Do not invent details not found in the Knowledge Base.
-5. COMPLETION & CLOSING: Once all 5 details are collected, thank them, mention that ${assignedRep} will reach out, and set "disableAI" to true. Do not ask more questions.
-6. JSON: You must respond completely based on the structured output schema defined.`;
+CRITICAL RULES:
+1. TONE & GREETING: Act as a friendly, helpful assistant. If this is the first message (HISTORY is (None)), warmly welcome the user to Petsfolio and greet them before assisting.
+2. COMPREHENSIVE ANSWERS: When the user asks for information about a service, provide ALL the relevant details found in the Knowledge Base about that service in your response. Do not drip-feed information or ask them if they want to know more before giving the details.
+3. GUIDANCE: After providing the information, naturally guide the user on the next steps (e.g., asking if they are ready to book or if they have any specific requirements) without being pushy.
+4. NO FORCED QUALIFICATION: Do NOT ask the user for 'Pet Type', 'City', or any other missing data fields purely to collect data. Your goal is simply to assist them with their inquiries.
+5. PASSIVE EXTRACTION: Even though you won't ask for it, if the user naturally mentions their 'Pet Type', 'City', 'Intent', etc., you MUST extract that info into the corresponding JSON fields so it can be saved.
+6. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP.
+7. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human, to book an appointment, or if you cannot answer their question, let them know that ${assignedRep} will contact them shortly and set disableAI=true.
+8. OUTPUT: Respond purely via the structured JSON schema.
+9. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.`;
 
     const model = new ChatGoogleGenerativeAI({
       model: "gemini-2.5-flash",
@@ -207,11 +277,11 @@ INSTRUCTIONS:
     });
 
     const modelWithStructure = model.withStructuredOutput(qualificationSchema);
-    
+
     console.log("Generating RAG response with Gemini...");
     const parsed = await modelWithStructure.invoke([
       ["system", systemPrompt],
-      ["user", incomingText]
+      ["user", incomingText],
     ]);
 
     await AILog.create({
@@ -219,7 +289,7 @@ INSTRUCTIONS:
       prompt: systemPrompt + "\n\nUser Message: " + incomingText,
       response: JSON.stringify(parsed, null, 2),
       model: "gemini-2.5-flash (RAG + Qdrant)",
-      tokensUsed: 0, 
+      tokensUsed: 0,
     });
 
     const updatePayload = {};
@@ -236,14 +306,15 @@ INSTRUCTIONS:
         petAge: aiData.petAge || prevQual.petAge || "",
         city: aiData.city || prevQual.city || "",
         intent: aiData.intent || prevQual.intent || "",
-        specialRequirements: aiData.specialRequirements || prevQual.specialRequirements || "",
+        specialRequirements:
+          aiData.specialRequirements || prevQual.specialRequirements || "",
         urgency: aiData.urgency || prevQual.urgency || "Medium",
         interestScore: aiData.interestScore ?? prevQual.interestScore ?? 0,
       };
 
       const resolvedIntent = aiData.intent || prevQual.intent;
       if (resolvedIntent) updatePayload.service = resolvedIntent;
-      
+
       const resolvedCity = aiData.city || prevQual.city;
       if (resolvedCity) updatePayload.city = resolvedCity;
     }
@@ -256,7 +327,8 @@ INSTRUCTIONS:
 
     if (parsed.summary) updatePayload.conversationSummary = parsed.summary;
     if (parsed.sentiment) updatePayload.sentiment = parsed.sentiment;
-    if (parsed.probabilityOfConversion) updatePayload.probabilityOfConversion = parsed.probabilityOfConversion;
+    if (parsed.probabilityOfConversion)
+      updatePayload.probabilityOfConversion = parsed.probabilityOfConversion;
     if (parsed.nextAction) updatePayload.nextAction = parsed.nextAction;
 
     if (parsed.disableAI) {
@@ -271,7 +343,10 @@ INSTRUCTIONS:
 
     await Lead.findByIdAndUpdate(leadId, updatePayload);
 
-    if (parsed.triggerActions?.createFollowUp && parsed.triggerActions?.followUpDate) {
+    if (
+      parsed.triggerActions?.createFollowUp &&
+      parsed.triggerActions?.followUpDate
+    ) {
       const existingFollowUp = await Followup.findOne({
         leadId,
         date: parsed.triggerActions.followUpDate,
@@ -284,8 +359,11 @@ INSTRUCTIONS:
           type: "WhatsApp",
           date: parsed.triggerActions.followUpDate,
           time: "10:00 AM",
-          priority: parsed.qualification?.urgency === "High" ? "High" : "Medium",
-          notes: parsed.triggerActions.followUpNotes || "Follow-up scheduled by AI Agent",
+          priority:
+            parsed.qualification?.urgency === "High" ? "High" : "Medium",
+          notes:
+            parsed.triggerActions.followUpNotes ||
+            "Follow-up scheduled by AI Agent",
           author: "AI Agent",
         });
 
@@ -301,12 +379,18 @@ INSTRUCTIONS:
     if (parsed.triggerActions?.addNote) {
       await Lead.findByIdAndUpdate(leadId, {
         $set: {
-          notes: (lead.notes || "") + "\n\n[AI Note]: " + parsed.triggerActions.addNote,
+          notes:
+            (lead.notes || "") +
+            "\n\n[AI Note]: " +
+            parsed.triggerActions.addNote,
         },
       });
     }
 
-    return parsed.reply || "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
+    return (
+      parsed.reply ||
+      "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly."
+    );
   } catch (error) {
     console.error("Error in AI Service generateAIResponse:", error);
     return "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
