@@ -216,7 +216,7 @@ export const generateAIResponse = async (leadId, incomingText) => {
     const vs = await initVectorStore();
     let ragContext = "";
     if (vs) {
-      const results = await vs.similaritySearch(incomingText, 4);
+      const results = await vs.similaritySearch(incomingText, 10);
       ragContext = results.map((r) => r.pageContent).join("\n\n");
     }
 
@@ -264,9 +264,10 @@ CRITICAL RULES:
 4. NO FORCED QUALIFICATION: Do NOT ask the user for 'Pet Type', 'City', or any other missing data fields purely to collect data. Your goal is simply to assist them with their inquiries.
 5. PASSIVE EXTRACTION: Even though you won't ask for it, if the user naturally mentions their 'Pet Type', 'City', 'Intent', etc., you MUST extract that info into the corresponding JSON fields so it can be saved.
 6. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP.
-7. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human, to book an appointment, or if you cannot answer their question, let them know that ${assignedRep} will contact them shortly and set disableAI=true.
-8. OUTPUT: Respond purely via the structured JSON schema.
-9. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.`;
+7. SHARING LINKS: If the user asks for the app or if he mentions about booking a service, application, or website link, you MUST share the direct URLs exactly as provided in the Knowledge Base. You are fully authorized to share links.
+8. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human, to book an appointment, or if you cannot answer their question, let them know that ${assignedRep} will contact them shortly and set disableAI=true.
+9. OUTPUT: Respond purely via the structured JSON schema.
+10. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.`;
 
     const openRouterApiKey = process.env.OPENROUTER_API_KEY;
     if (!openRouterApiKey) {
@@ -277,7 +278,7 @@ CRITICAL RULES:
     }
 
     const model = new ChatOpenAI({
-      modelName: "google/gemma-4-26b-a4b-it:free",
+      modelName: "openrouter/auto",
       temperature: 0,
       apiKey: openRouterApiKey,
       configuration: {
@@ -297,7 +298,7 @@ CRITICAL RULES:
       leadId,
       prompt: systemPrompt + "\n\nUser Message: " + incomingText,
       response: JSON.stringify(parsed, null, 2),
-      model: "gemma-4-26b-a4b-it:free (OpenRouter + Qdrant)",
+      model: "openrouter/auto (OpenRouter + Qdrant)",
       tokensUsed: 0,
     });
 

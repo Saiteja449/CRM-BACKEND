@@ -31,7 +31,7 @@ async function ingestToQdrant() {
 
     const docPath = path.join(
       __dirname,
-      "../data/Petsfolio Client Application Rag Application copy.pdf",
+      "../data/Petsfolio Client Application Rag Application.pdf",
     );
     if (!fs.existsSync(docPath)) {
       throw new Error(`Document not found at ${docPath}`);
