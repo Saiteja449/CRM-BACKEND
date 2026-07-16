@@ -1,7 +1,5 @@
-import {
-  GoogleGenerativeAIEmbeddings,
-  ChatGoogleGenerativeAI,
-} from "@langchain/google-genai";
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import { ChatOpenAI } from "@langchain/openai";
 import { QdrantVectorStore } from "@langchain/qdrant";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { z } from "zod";
@@ -270,10 +268,21 @@ CRITICAL RULES:
 8. OUTPUT: Respond purely via the structured JSON schema.
 9. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.`;
 
-    const model = new ChatGoogleGenerativeAI({
-      model: "gemini-2.5-flash",
+    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
+    if (!openRouterApiKey) {
+      console.warn(
+        "OPENROUTER_API_KEY is not defined in the environment variables.",
+      );
+      return "I'm currently unable to assist because the AI configuration is missing. Please contact support.";
+    }
+
+    const model = new ChatOpenAI({
+      modelName: "google/gemma-4-26b-a4b-it:free",
       temperature: 0,
-      apiKey: geminiApiKey,
+      apiKey: openRouterApiKey,
+      configuration: {
+        baseURL: "https://openrouter.ai/api/v1",
+      },
     });
 
     const modelWithStructure = model.withStructuredOutput(qualificationSchema);
@@ -288,7 +297,7 @@ CRITICAL RULES:
       leadId,
       prompt: systemPrompt + "\n\nUser Message: " + incomingText,
       response: JSON.stringify(parsed, null, 2),
-      model: "gemini-2.5-flash (RAG + Qdrant)",
+      model: "gemma-4-26b-a4b-it:free (OpenRouter + Qdrant)",
       tokensUsed: 0,
     });
 
