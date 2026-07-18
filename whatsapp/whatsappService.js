@@ -76,6 +76,22 @@ const updateSessionStatus = async (
 };
 export const connectWhatsApp = async (sessionId) => {
   if (!sessionId) sessionId = "device_1";
+
+  // Prevent duplicate connection attempts for the same active session
+  if (sessions[sessionId]) {
+    if (sessions[sessionId].status === "connected" || sessions[sessionId].status === "connecting") {
+      console.log(`[DEBUG] WhatsApp session ${sessionId} is already active (${sessions[sessionId].status}). Skipping connect.`);
+      return;
+    }
+    // Clean up dangling socket before starting a new connection
+    if (sessions[sessionId].sock) {
+      try {
+        sessions[sessionId].sock.end();
+      } catch (e) {}
+      sessions[sessionId].sock = null;
+    }
+  }
+
   try {
     const authFolder = path.join(
       __dirname,
