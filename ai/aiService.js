@@ -227,14 +227,17 @@ export const generateAIResponse = async (leadId, incomingText) => {
     const vs = await initVectorStore();
     let ragContext = "";
     if (vs) {
-      const results = await vs.similaritySearch(incomingText, 10);
+      const currentIntent = lead.aiQualification?.intent || "";
+      const searchQuery = `${currentIntent} ${incomingText}`.trim();
+      const results = await vs.similaritySearch(searchQuery, 10);
       ragContext = results.map((r) => r.pageContent).join("\n\n");
     }
 
     // History
-    const history = await Message.find({ leadId })
-      .sort({ timestamp: 1 })
-      .limit(4);
+    const historyDocs = await Message.find({ leadId })
+      .sort({ timestamp: -1 })
+      .limit(8);
+    const history = historyDocs.reverse();
     const formattedHistory = history.map((msg) => ({
       role: msg.direction === "incoming" ? "user" : "model",
       text: msg.text,
@@ -270,7 +273,7 @@ USER MSG: "${incomingText}"
 
 CRITICAL RULES:
 1. TONE & GREETING: Act as a friendly, helpful assistant. If this is the first message (HISTORY is (None)), warmly welcome the user to Petsfolio and greet them before assisting.
-2. CONCISE ANSWERS: When the user asks for information about a service, provide the relevant details found in the Knowledge Base about that service, but keep your response strictly under 350 words. Be concise and do not overwhelm the user with too much information at once.
+2. CONCISE ANSWERS: When the user asks for information about a service, provide the relevant details found in the Knowledge Base about that service. Be concise and do not overwhelm the user with too much information at once.
 3. GUIDANCE: After providing the information, direct the user to download and use the Petsfolio Client Application to book their service. Do NOT ask them if they are ready to book here or try to schedule it manually.
 4. NO FORCED QUALIFICATION: Do NOT ask the user for 'Pet Type', 'City', or any other missing data fields purely to collect data. Your goal is simply to assist them with their inquiries.
 5. PASSIVE EXTRACTION: Even though you won't ask for it, if the user naturally mentions their 'Pet Type', 'City', 'Intent', etc., you MUST extract that info into the corresponding JSON fields so it can be saved.

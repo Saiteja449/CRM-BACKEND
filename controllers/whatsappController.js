@@ -32,12 +32,13 @@ export const getStatus = async (req, res) => {
 
     const result = memoryStatuses.map((mem) => {
       const db = dbSessions.find(s => s.sessionId === mem.sessionId);
+      const status = mem.status || db?.status || "disconnected";
       return {
         sessionId: mem.sessionId,
-        status: db?.status || mem.status,
-        qrCode: mem.qrCode || db?.qrCode || "",
-        connectedPhone: db?.connectedPhone || mem.connectedPhone || "",
-        connectedName: db?.connectedName || mem.connectedName || "",
+        status: status,
+        qrCode: status === "qr" ? (mem.qrCode || db?.qrCode || "") : "",
+        connectedPhone: mem.connectedPhone || db?.connectedPhone || "",
+        connectedName: mem.connectedName || db?.connectedName || "",
       };
     });
 
