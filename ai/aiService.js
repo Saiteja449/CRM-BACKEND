@@ -62,7 +62,6 @@ const initVectorStore = async () => {
 const qualificationSchema = z.object({
   reply: z
     .string()
-    .default("")
     .describe(
       "Your reply text to the user. Provide comprehensive answers and guide the user naturally without forcing unnecessary questions.",
     ),
@@ -413,14 +412,10 @@ CRITICAL RULES:
       });
     }
 
-    let reply =
+    return (
       parsed.reply ||
-      "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
-
-    // Fix escaped newlines and quotes
-    reply = reply.replace(/\\\\n/g, "\n").replace(/\\\\"/g, '"').trim();
-
-    return reply;
+      "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly."
+    );
   } catch (error) {
     console.error("Error in AI Service generateAIResponse:", error);
     return "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
