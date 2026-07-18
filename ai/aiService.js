@@ -267,7 +267,8 @@ CRITICAL RULES:
 7. SHARING LINKS: If the user asks for the app or if he mentions about booking a service, application, or website link, you MUST share the direct URLs exactly as provided in the Knowledge Base. You are fully authorized to share links.
 8. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human or if you cannot answer their question, let them know that ${assignedRep} will contact them shortly and set disableAI=true.
 9. OUTPUT: Respond purely via the structured JSON schema.
-10. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.`;
+10. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.
+11. OFF-TOPIC FILTER: Only respond to questions about Petsfolio, its services (Grooming, Training, Walking, Pet Sitting, Pet Insurance), or general pet care. If the user asks any off-topic or unrelated questions, politely decline and state that you can only assist with Petsfolio-related queries.`;
 
     const openRouterApiKey = process.env.OPENROUTER_API_KEY;
     if (!openRouterApiKey) {
