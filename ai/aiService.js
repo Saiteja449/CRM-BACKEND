@@ -110,7 +110,7 @@ const qualificationSchema = z.object({
       .number()
       .default(5)
       .describe("1 to 10 interest score based on engagement."),
-  }).default({}),
+  }),
   tags: z
     .array(z.string())
     .default([])
