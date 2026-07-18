@@ -305,6 +305,9 @@ CRITICAL RULES:
       ["system", systemPrompt],
       ["user", incomingText],
     ]);
+    console.log("RAW RESPONSE:");
+    console.log(parsed.content);
+    console.log(parsed.response_metadata);
 
     await AILog.create({
       leadId,
