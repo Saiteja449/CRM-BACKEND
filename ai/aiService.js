@@ -306,8 +306,8 @@ CRITICAL RULES:
       ["user", incomingText],
     ]);
     console.log("RAW RESPONSE:");
-    console.log(parsed.content);
-    console.log(parsed.response_metadata);
+    console.log(parsed);
+    console.log(parsed);
 
     await AILog.create({
       leadId,
