@@ -206,6 +206,17 @@ export const logoutWhatsApp = async (sessionId) => {
 
 const handleIncomingMessage = async (msg, sessionId) => {
   try {
+    const messageId = msg.key.id;
+
+    // 1. Check if message already exists in DB to avoid duplicate processing
+    const existingMsg = await Message.findOne({ messageId });
+    if (existingMsg) {
+      console.log(
+        `[DEBUG] Message ${messageId} already exists in DB. Skipping to avoid duplicates.`,
+      );
+      return;
+    }
+
     const remoteJid = msg.key.remoteJid;
     const remoteJidAlt = msg.key.remoteJidAlt;
 
@@ -218,8 +229,18 @@ const handleIncomingMessage = async (msg, sessionId) => {
       return;
     }
 
-    const phoneJid = remoteJidAlt || remoteJid;
+    // Resolve phoneJid: Prefer the phone number JID (@s.whatsapp.net) over the LID (@lid)
+    let phoneJid = remoteJid;
+    if (remoteJidAlt && remoteJidAlt.endsWith("@s.whatsapp.net")) {
+      phoneJid = remoteJidAlt;
+    } else if (remoteJid && remoteJid.endsWith("@s.whatsapp.net")) {
+      phoneJid = remoteJid;
+    } else if (remoteJidAlt) {
+      phoneJid = remoteJidAlt;
+    }
+
     const phone = normalizePhone(phoneJid);
+    const isLid = phoneJid && phoneJid.endsWith("@lid");
 
     // Skip messages sent to own number
     const sock = sessions[sessionId]?.sock;
@@ -239,14 +260,13 @@ const handleIncomingMessage = async (msg, sessionId) => {
       }
     }
 
-    const messageId = msg.key.id;
     const timestamp = new Date(
       (msg.messageTimestamp || Math.floor(Date.now() / 1000)) * 1000,
     );
     const pushName = msg.pushName || "WhatsApp User";
 
     console.log(
-      `Processing message - Phone: ${phone}, Name: ${pushName}, JID: ${remoteJid}, AltJID: ${remoteJidAlt || "none"}`,
+      `Processing message - Phone: ${phone}, Name: ${pushName}, JID: ${remoteJid}, AltJID: ${remoteJidAlt || "none"}, isLid: ${isLid}`,
     );
 
     let messageType = "text";
@@ -302,6 +322,13 @@ const handleIncomingMessage = async (msg, sessionId) => {
     let isNewLead = false;
 
     if (!lead) {
+      // Do NOT create a lead if the identifier is a LID (not a real phone number)
+      // or if the message is outgoing (sent by us/fromMe) to a non-existent lead
+      if (isLid || msg.key.fromMe) {
+        console.log(`[DEBUG] Skipping lead creation for LID or outgoing message. Phone/LID: ${phone}`);
+        return;
+      }
+
       console.log(`[DEBUG] Lead not found, creating new lead for ${pushName}`);
       isNewLead = true;
       lead = new Lead({
@@ -358,14 +385,6 @@ const handleIncomingMessage = async (msg, sessionId) => {
     }
 
     // 3. Create message record
-    const existingMsg = await Message.findOne({ messageId });
-    if (existingMsg) {
-      console.log(
-        `[DEBUG] Message ${messageId} already exists in DB. Skipping to avoid duplicates.`,
-      );
-      return;
-    }
-
     const isFromMe = msg.key.fromMe;
     const messageRecord = await Message.create({
       messageId,
