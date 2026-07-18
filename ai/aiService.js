@@ -65,52 +65,63 @@ const qualificationSchema = z.object({
     .describe(
       "Your reply text to the user. Provide comprehensive answers and guide the user naturally without forcing unnecessary questions.",
     ),
-  qualification: z.object({
-    petType: z
-      .string()
-      .default("")
-      .describe(
-        "Type of pet (e.g., Dog, Cat). Return empty string if not mentioned in the current input.",
-      ),
-    breed: z
-      .string()
-      .default("")
-      .describe(
-        "Breed of the pet. Return empty string if not mentioned in the current input.",
-      ),
-    petAge: z
-      .string()
-      .default("")
-      .describe(
-        "Age of the pet. Return empty string if not mentioned in the current input.",
-      ),
-    city: z
-      .string()
-      .default("")
-      .describe(
-        "City of the user. Return empty string if not mentioned in the current input.",
-      ),
-    intent: z
-      .string()
-      .default("")
-      .describe(
-        "Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance). Return empty string if not mentioned in the current input.",
-      ),
-    specialRequirements: z
-      .string()
-      .default("")
-      .describe(
-        "Health issues, allergies, etc. 'None' if specified none, empty string if not mentioned.",
-      ),
-    urgency: z
-      .string()
-      .default("Medium")
-      .describe("High, Medium, or Low urgency based on context."),
-    interestScore: z
-      .number()
-      .default(5)
-      .describe("1 to 10 interest score based on engagement."),
-  }),
+  qualification: z
+    .object({
+      petType: z
+        .string()
+        .default("")
+        .describe(
+          "Type of pet (e.g., Dog, Cat). Return empty string if not mentioned in the current input.",
+        ),
+      breed: z
+        .string()
+        .default("")
+        .describe(
+          "Breed of the pet. Return empty string if not mentioned in the current input.",
+        ),
+      petAge: z
+        .string()
+        .default("")
+        .describe(
+          "Age of the pet. Return empty string if not mentioned in the current input.",
+        ),
+      city: z
+        .string()
+        .default("")
+        .describe(
+          "City of the user. Return empty string if not mentioned in the current input.",
+        ),
+      intent: z
+        .string()
+        .default("")
+        .describe(
+          "Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance). Return empty string if not mentioned in the current input.",
+        ),
+      specialRequirements: z
+        .string()
+        .default("")
+        .describe(
+          "Health issues, allergies, etc. 'None' if specified none, empty string if not mentioned.",
+        ),
+      urgency: z
+        .string()
+        .default("Medium")
+        .describe("High, Medium, or Low urgency based on context."),
+      interestScore: z
+        .number()
+        .default(5)
+        .describe("1 to 10 interest score based on engagement."),
+    })
+    .default({
+      petType: "",
+      breed: "",
+      petAge: "",
+      city: "",
+      intent: "",
+      specialRequirements: "",
+      urgency: "Medium",
+      interestScore: 5,
+    }),
   tags: z
     .array(z.string())
     .default([])
