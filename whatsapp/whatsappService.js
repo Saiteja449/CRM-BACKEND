@@ -298,11 +298,12 @@ const handleIncomingMessage = async (msg, sessionId) => {
     } else if (msgContent.extendedTextMessage) {
       messageType = "text";
       textContent = msgContent.extendedTextMessage.text || "";
-    } else if (msgContent.imageMessage) {
+    } else if (msgContent.imageMessage || msgContent.videoMessage) {
       messageType = "text";
-      textContent = msgContent.imageMessage.caption
-        ? `[Image with caption: ${msgContent.imageMessage.caption}] (Images are disabled)`
-        : "[Image attachment disabled]";
+      const caption = msgContent.imageMessage?.caption || msgContent.videoMessage?.caption;
+      textContent = caption
+        ? `[Media with caption: ${caption}] (Images/Videos are disabled)`
+        : "[Image/Video attachment disabled]";
       mediaUrl = "";
     } else if (msgContent.audioMessage) {
       messageType = "audio";
@@ -351,7 +352,7 @@ const handleIncomingMessage = async (msg, sessionId) => {
         name: pushName,
         phone: phone,
         source: "WhatsApp",
-        service: "General Enquiry", // Satisfies MongoDB required field
+        service: "General Inquiry", // Satisfies MongoDB required field
         status: "New",
         joinedAt: new Date(),
         notes: `Discovered via WhatsApp message: "${textContent.substring(0, 100)}"`,

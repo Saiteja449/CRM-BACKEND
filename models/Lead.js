@@ -26,9 +26,10 @@ const leadSchema = new mongoose.Schema(
       default: "Manual Entry",
     },
     service: {
-      // Accepts both legacy string ("Grooming") and new array (["Grooming","Training"])
-      type: mongoose.Schema.Types.Mixed,
+      type: String,
+      enum: ["Grooming", "Training", "Walking", "Pet Sitting", "Pet Insurance", "General Inquiry", "General Enquiry"],
       required: true,
+      default: "Grooming",
     },
 
     assignedTo: {

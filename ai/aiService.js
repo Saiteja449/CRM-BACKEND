@@ -130,7 +130,7 @@ const qualificationSchema = z.object({
     .boolean()
     .default(false)
     .describe(
-      "Set to true if user asks for human or if all 5 required details are collected.",
+      "Set to true if user asks for human/support, confirms 'yes' to support team offer, or if AI cannot answer.",
     ),
   summary: z
     .string()
@@ -227,8 +227,7 @@ export const generateAIResponse = async (leadId, incomingText) => {
     const vs = await initVectorStore();
     let ragContext = "";
     if (vs) {
-      const currentIntent = lead.aiQualification?.intent || "";
-      const searchQuery = `${currentIntent} ${incomingText}`.trim();
+      const searchQuery = incomingText.trim();
       const results = await vs.similaritySearch(searchQuery, 10);
       ragContext = results.map((r) => r.pageContent).join("\n\n");
     }
@@ -256,12 +255,17 @@ export const generateAIResponse = async (leadId, incomingText) => {
     const systemPrompt = `You are Petsfolio's AI assistant.
 
 KNOWLEDGE BASE:
-${ragContext}
+${ragContext || "(No relevant information found in Knowledge Base)"}
+
+APP DOWNLOAD LINKS:
+- Android (Google Play): https://play.google.com/store/apps/details?id=com.petsfolio.customer&hl=en
+- iOS (App Store): https://apps.apple.com/in/app/petsfolio-pet-parent/id6746559723
 
 LEAD CONTEXT:
 Name: ${lead.name} | Phone: ${lead.phone} | Rep: ${assignedRep}
 Already Collected:
-- Service (intent): ${lead.aiQualification?.intent || "Missing"}
+- Lead Service Interest: ${lead.service || "Missing"}
+- AI Extracted Intent: ${lead.aiQualification?.intent || "Missing"}
 - City: ${lead.aiQualification?.city || "Missing"}
 - Pet Type: ${lead.aiQualification?.petType || "Missing"}
 
@@ -273,16 +277,18 @@ USER MSG: "${incomingText}"
 
 CRITICAL RULES:
 1. TONE & GREETING: Act as a friendly, helpful assistant. If this is the first message (HISTORY is (None)), warmly welcome the user to Petsfolio and greet them before assisting.
-2. CONCISE ANSWERS: When the user asks for information about a service, provide the relevant details found in the Knowledge Base about that service. Be concise and do not overwhelm the user with too much information at once.
-3. GUIDANCE: After providing the information, direct the user to download and use the Petsfolio Client Application to book their service. Do NOT ask them if they are ready to book here or try to schedule it manually.
-4. NO FORCED QUALIFICATION: Do NOT ask the user for 'Pet Type', 'City', or any other missing data fields purely to collect data. Your goal is simply to assist them with their inquiries.
-5. PASSIVE EXTRACTION: Even though you won't ask for it, if the user naturally mentions their 'Pet Type', 'City', 'Intent', etc., you MUST extract that info into the corresponding JSON fields so it can be saved.
-6. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP.
-7. SHARING LINKS: If the user asks for the app or if he mentions about booking a service, application, or website link, you MUST share the direct URLs exactly as provided in the Knowledge Base. You are fully authorized to share links.
-8. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human or if you cannot answer their question, let them know that ${assignedRep} will contact them shortly and set disableAI=true.
-9. OUTPUT: Respond purely via the structured JSON schema.
-10. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.
-11. OFF-TOPIC FILTER: Only respond to questions about Petsfolio, its services (Grooming, Training, Walking, Pet Sitting, Pet Insurance), or general pet care. If the user asks any off-topic or unrelated questions, politely decline and state that you can only assist with Petsfolio-related queries.`;
+2. MISSING INFO / FALLBACK: You MUST ONLY use the information provided in the KNOWLEDGE BASE. Do NOT invent or assume any information. If you DO NOT have the proper information in the KNOWLEDGE BASE to answer the user's question, politely inform the user, tell them to download the Petsfolio Client Application (include the APP DOWNLOAD LINKS provided above), and let them know that ${assignedRep} from our team will contact them shortly.
+3. MEDIA ATTACHMENTS: If the user sends an image, video, or attachment (indicated by USER MSG containing '[Image/Video attachment disabled]', '[Media with caption]', etc.), you MUST respond with: "I noticed you sent an image/video! I can only read text messages right now. Could you please describe your query in text, or let me know if you'd like to speak with a team member?"
+4. GUIDANCE: After providing the requested information, direct the user to download and use the Petsfolio Client Application to book their service. Do NOT ask them if they are ready to book here or try to schedule it manually.
+5. NO FORCED QUALIFICATION: Do NOT ask the user for 'Pet Type', 'City', or any other missing data fields purely to collect data. Your goal is simply to assist them with their inquiries.
+6. PASSIVE EXTRACTION: Even though you won't ask for it, if the user naturally mentions their 'Pet Type', 'City', 'Intent', etc., you MUST extract that info into the corresponding JSON fields so it can be saved.
+7. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP.
+8. SHARING LINKS: Whenever referring to the app or links, share the exact APP DOWNLOAD LINKS provided above.
+9. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human, says 'yes' or requests support when offered, or if you cannot answer their question, inform them that ${assignedRep} will contact them shortly and set disableAI=true.
+10. OUTPUT: Respond purely via the structured JSON schema.
+11. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.
+12. OFF-TOPIC FILTER: Only respond to questions about Petsfolio, its services (Grooming, Training, Walking, Pet Sitting, Pet Insurance), or general pet care. If the user asks any off-topic or unrelated questions, politely decline and state that you can only assist with Petsfolio-related queries.
+13. FRUSTRATION & REPEATED QUESTIONS: If the user appears frustrated, expresses annoyance, or repeatedly asks a question that was not solved by previous messages, politely answer their question and ask: "Do you need a support team member to assist you?" If the user responds "yes" (or expresses intent to connect with support), you MUST set disableAI=true and inform them that ${assignedRep} from our support team will reach out to them shortly.`;
 
     const openRouterApiKey = process.env.OPENROUTER_API_KEY;
     if (!openRouterApiKey) {
@@ -340,8 +346,22 @@ CRITICAL RULES:
         interestScore: aiData.interestScore ?? prevQual.interestScore ?? 0,
       };
 
-      const resolvedIntent = aiData.intent || prevQual.intent;
-      if (resolvedIntent) updatePayload.service = resolvedIntent;
+      const validServices = ["Grooming", "Training", "Walking", "Pet Sitting", "Pet Insurance", "General Inquiry"];
+      const rawIntent = aiData.intent || "";
+
+      let matchedService = validServices.find((s) => s.toLowerCase() === rawIntent.toLowerCase());
+      if (!matchedService) {
+        const combinedText = `${rawIntent} ${incomingText}`.toLowerCase();
+        if (combinedText.includes("groom")) matchedService = "Grooming";
+        else if (combinedText.includes("train")) matchedService = "Training";
+        else if (combinedText.includes("walk")) matchedService = "Walking";
+        else if (combinedText.includes("sit")) matchedService = "Pet Sitting";
+        else if (combinedText.includes("insur")) matchedService = "Pet Insurance";
+      }
+
+      if (matchedService) {
+        updatePayload.service = matchedService;
+      }
 
       const resolvedCity = aiData.city || prevQual.city;
       if (resolvedCity) updatePayload.city = resolvedCity;
