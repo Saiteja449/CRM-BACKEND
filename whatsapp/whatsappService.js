@@ -452,38 +452,8 @@ const handleIncomingMessage = async (msg, sessionId) => {
 
     // 6. Asynchronously trigger AI agent response with 4-second debounce
     if (!isFromMe && lead.aiEnabled) {
-      const firstContactTime = lead.joinedAt
-        ? new Date(lead.joinedAt)
-        : new Date();
-      const timeDiff = Date.now() - firstContactTime.getTime();
-      const twentyFourHours = 24 * 60 * 60 * 1000;
-
-      if (timeDiff > twentyFourHours) {
-        // Disable AI
-        lead.aiEnabled = false;
-        await Lead.findByIdAndUpdate(lead._id, { aiEnabled: false });
-
-        await Notification.create({
-          title: "AI Disabled - 24-Hour Expiration",
-          message: `AI has been disabled for ${lead.name} (${lead.phone}) because the 24-hour window from the first message has expired.`,
-          type: "lead_update",
-          targetRoles: ["sales manager", "sales person"],
-        });
-
-        const io = getIO();
-        if (io) {
-          io.to(lead._id.toString()).emit("conversation_updated", {
-            leadId: lead._id,
-            lead,
-          });
-        }
-        console.log(
-          `[DEBUG] 24 hours expired for lead ID: ${lead._id}. Disabling AI.`,
-        );
-      } else {
-        console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
-        triggerAIDebounced(lead, remoteJid, textContent, sessionId);
-      }
+      console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
+      triggerAIDebounced(lead, remoteJid, textContent, sessionId);
     }
   } catch (error) {
     console.error("Error processing incoming WhatsApp message:", error);

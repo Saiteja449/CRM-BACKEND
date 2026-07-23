@@ -1,4 +1,7 @@
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
+import {
+  GoogleGenerativeAIEmbeddings,
+  ChatGoogleGenerativeAI,
+} from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
 import { QdrantVectorStore } from "@langchain/qdrant";
 import { QdrantClient } from "@qdrant/js-client-rest";
@@ -227,8 +230,11 @@ export const generateAIResponse = async (leadId, incomingText) => {
     const vs = await initVectorStore();
     let ragContext = "";
     if (vs) {
-      const searchQuery = incomingText.trim();
-      const results = await vs.similaritySearch(searchQuery, 10);
+      const userIntent = lead.aiQualification?.intent || lead.service || "";
+      const searchQuery = userIntent
+        ? `${userIntent} ${incomingText.trim()}`
+        : incomingText.trim();
+      const results = await vs.similaritySearch(searchQuery, 8);
       ragContext = results.map((r) => r.pageContent).join("\n\n");
     }
 
@@ -277,46 +283,106 @@ USER MSG: "${incomingText}"
 
 CRITICAL RULES:
 1. TONE & GREETING: Act as a friendly, helpful assistant. If this is the first message (HISTORY is (None)), warmly welcome the user to Petsfolio and greet them before assisting.
-2. MISSING INFO / FALLBACK: You MUST ONLY use the information provided in the KNOWLEDGE BASE. Do NOT invent or assume any information. If you DO NOT have the proper information in the KNOWLEDGE BASE to answer the user's question, politely inform the user, tell them to download the Petsfolio Client Application (include the APP DOWNLOAD LINKS provided above), and let them know that ${assignedRep} from our team will contact them shortly.
-3. MEDIA ATTACHMENTS: If the user sends an image, video, or attachment (indicated by USER MSG containing '[Image/Video attachment disabled]', '[Media with caption]', etc.), you MUST respond with: "I noticed you sent an image/video! I can only read text messages right now. Could you please describe your query in text, or let me know if you'd like to speak with a team member?"
-4. GUIDANCE: After providing the requested information, direct the user to download and use the Petsfolio Client Application to book their service. Do NOT ask them if they are ready to book here or try to schedule it manually.
-5. NO FORCED QUALIFICATION: Do NOT ask the user for 'Pet Type', 'City', or any other missing data fields purely to collect data. Your goal is simply to assist them with their inquiries.
-6. PASSIVE EXTRACTION: Even though you won't ask for it, if the user naturally mentions their 'Pet Type', 'City', 'Intent', etc., you MUST extract that info into the corresponding JSON fields so it can be saved.
-7. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP.
-8. SHARING LINKS: Whenever referring to the app or links, share the exact APP DOWNLOAD LINKS provided above.
-9. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human, says 'yes' or requests support when offered, or if you cannot answer their question, inform them that ${assignedRep} will contact them shortly and set disableAI=true.
-10. OUTPUT: Respond purely via the structured JSON schema.
-11. FORMATTING: You are chatting on WhatsApp. Use WhatsApp markdown (*bold* for emphasis). NO HTML tags. Keep sentences short.
-12. OFF-TOPIC FILTER: Only respond to questions about Petsfolio, its services (Grooming, Training, Walking, Pet Sitting, Pet Insurance), or general pet care. If the user asks any off-topic or unrelated questions, politely decline and state that you can only assist with Petsfolio-related queries.
-13. FRUSTRATION & REPEATED QUESTIONS: If the user appears frustrated, expresses annoyance, or repeatedly asks a question that was not solved by previous messages, politely answer their question and ask: "Do you need a support team member to assist you?" If the user responds "yes" (or expresses intent to connect with support), you MUST set disableAI=true and inform them that ${assignedRep} from our support team will reach out to them shortly.`;
+2. CONTEXT AWARENESS: Always use the LEAD CONTEXT and HISTORY to understand what the user is asking about.
+3. PET BOARDING: If the user asks for 'Pet Boarding', politely explain that we currently do not offer Pet Boarding, but we offer 'Pet Sitting', which is a similar home-based service. Share the APP DOWNLOAD LINKS for them to book it.
+4. MISSING INFO / FALLBACK: You MUST ONLY use the information provided in the KNOWLEDGE BASE. Do NOT invent or assume any information. If you DO NOT have the proper information in the KNOWLEDGE BASE to answer the user's question, politely inform the user, tell them to download the Petsfolio Client Application (include the APP DOWNLOAD LINKS provided above), and let them know that ${assignedRep} from our team will contact them shortly.
+5. MEDIA ATTACHMENTS: If the user sends an image, video, or attachment (indicated by USER MSG containing '[Image/Video attachment disabled]', '[Media with caption]', etc.), you MUST respond with: "I noticed you sent an image/video! I can only read text messages right now. Could you please describe your query in text, or let me know if you'd like to speak with a team member?"
+6. GUIDANCE: After providing the requested information, direct the user to download and use the Petsfolio Client Application to book their service. Do NOT ask them if they are ready to book here or try to schedule it manually.
+7. NO FORCED QUALIFICATION: Do NOT ask the user for 'Pet Type', 'City', or any other missing data fields purely to collect data. Your goal is simply to assist them with their inquiries.
+8. PASSIVE EXTRACTION: Even though you won't ask for it, if the user naturally mentions their 'Pet Type', 'City', 'Intent', etc., you MUST extract that info into the corresponding JSON fields so it can be saved.
+9. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP.
+10. SHARING LINKS: Whenever referring to the app or links, share the exact APP DOWNLOAD LINKS provided above.
+11. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human, says 'yes' or requests support when offered, or if you cannot answer their question, inform them that ${assignedRep} will contact them shortly and set disableAI=true.
+12. OUTPUT: Respond purely via the structured JSON schema.
+13. WHATSAPP FORMATTING (CRITICAL): Do NOT write long paragraphs. Your response MUST be formatted for WhatsApp. Use short, punchy sentences. Add double line breaks between distinct thoughts or steps. Use bullet points or numbered lists where appropriate. Include relevant emojis naturally. NEVER return a huge wall of text.
+14. OFF-TOPIC FILTER: Only respond to questions about Petsfolio, its services (Grooming, Training, Walking, Pet Sitting, Pet Insurance), or general pet care. If the user asks any off-topic or unrelated questions, politely decline and state that you can only assist with Petsfolio-related queries.
+15. FRUSTRATION & REPEATED QUESTIONS: If the user appears frustrated, expresses annoyance, or repeatedly asks a question that was not solved by previous messages, politely answer their question and ask: "Do you need a support team member to assist you?" If the user responds "yes" (or expresses intent to connect with support), you MUST set disableAI=true and inform them that ${assignedRep} from our support team will reach out to them shortly.`;
 
-    const openRouterApiKey = process.env.OPENROUTER_API_KEY;
-    if (!openRouterApiKey) {
-      console.warn(
-        "OPENROUTER_API_KEY is not defined in the environment variables.",
-      );
+    const groqApiKey = process.env.GROQ_API_KEY;
+    if (!groqApiKey) {
+      console.warn("GROQ_API_KEY is not defined in the environment variables.");
       return "I'm currently unable to assist because the AI configuration is missing. Please contact support.";
     }
 
-    const model = new ChatOpenAI({
-      modelName: "openrouter/auto",
+    const modelGroqPrimary = new ChatOpenAI({
+      modelName: "llama-3.3-70b-versatile",
       temperature: 0,
-      apiKey: openRouterApiKey,
-      configuration: {
-        baseURL: "https://openrouter.ai/api/v1",
-      },
+      maxTokens: 1500,
+      apiKey: groqApiKey,
+      configuration: { baseURL: "https://api.groq.com/openai/v1" },
     });
 
-    const modelWithStructure = model.withStructuredOutput(qualificationSchema);
+    const modelGeminiFallback = new ChatGoogleGenerativeAI({
+      model: "gemini-2.5-flash",
+      temperature: 0,
+      maxOutputTokens: 1500,
+      apiKey: process.env.GEMINI_API_KEY,
+    });
 
-    console.log("Generating RAG response with Gemini...");
-    const parsed = await modelWithStructure.invoke([
-      ["system", systemPrompt],
-      ["user", incomingText],
-    ]);
-    console.log("RAW RESPONSE:");
-    console.log(parsed);
-    console.log(parsed);
+    const modelOpenRouterFallback = new ChatOpenAI({
+      modelName: "openrouter/auto",
+      temperature: 0,
+      maxTokens: 1500,
+      apiKey: process.env.OPENROUTER_API_KEY,
+      configuration: { baseURL: "https://openrouter.ai/api/v1" },
+    });
+
+    const modelsToTry = [
+      modelOpenRouterFallback.withStructuredOutput(qualificationSchema, {
+        name: "generate_response",
+        method: "functionCalling",
+      }),
+      modelGroqPrimary.withStructuredOutput(qualificationSchema, {
+        name: "generate_response",
+        method: "functionCalling",
+      }),
+      modelGeminiFallback.withStructuredOutput(qualificationSchema),
+    ];
+
+    let parsed = null;
+    let lastError = null;
+
+    console.log("Generating AI response with fallback strategy...");
+
+    for (let i = 0; i < modelsToTry.length; i++) {
+      try {
+        parsed = await modelsToTry[i].invoke([
+          ["system", systemPrompt],
+          ["user", incomingText],
+        ]);
+        console.log(`Success with model index ${modelsToTry[i].name}`);
+        break;
+      } catch (e) {
+        lastError = e;
+        console.warn(
+          `Model ${modelsToTry[i].name} fallback index ${i} failed: ${e.message}`,
+        );
+      }
+    }
+
+    if (!parsed) {
+      console.error(
+        "All AI models failed. Using hard fallback.",
+        lastError?.message,
+      );
+      parsed = {
+        reply:
+          "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.",
+        disableAI: true,
+        summary: "System failure. Handoff to human.",
+        qualification: {},
+        tags: [],
+        sentiment: "Neutral",
+        probabilityOfConversion: 50,
+        nextAction: "Contact lead manually due to AI failure",
+        triggerActions: {
+          createFollowUp: false,
+          followUpNotes: "",
+          followUpDate: "",
+          addNote: "",
+        },
+      };
+    }
 
     await AILog.create({
       leadId,
@@ -346,17 +412,27 @@ CRITICAL RULES:
         interestScore: aiData.interestScore ?? prevQual.interestScore ?? 0,
       };
 
-      const validServices = ["Grooming", "Training", "Walking", "Pet Sitting", "Pet Insurance", "General Inquiry"];
+      const validServices = [
+        "Grooming",
+        "Training",
+        "Walking",
+        "Pet Sitting",
+        "Pet Insurance",
+        "General Inquiry",
+      ];
       const rawIntent = aiData.intent || "";
 
-      let matchedService = validServices.find((s) => s.toLowerCase() === rawIntent.toLowerCase());
+      let matchedService = validServices.find(
+        (s) => s.toLowerCase() === rawIntent.toLowerCase(),
+      );
       if (!matchedService) {
         const combinedText = `${rawIntent} ${incomingText}`.toLowerCase();
         if (combinedText.includes("groom")) matchedService = "Grooming";
         else if (combinedText.includes("train")) matchedService = "Training";
         else if (combinedText.includes("walk")) matchedService = "Walking";
         else if (combinedText.includes("sit")) matchedService = "Pet Sitting";
-        else if (combinedText.includes("insur")) matchedService = "Pet Insurance";
+        else if (combinedText.includes("insur"))
+          matchedService = "Pet Insurance";
       }
 
       if (matchedService) {
