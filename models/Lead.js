@@ -27,7 +27,9 @@ const leadSchema = new mongoose.Schema(
     },
     service: {
       type: String,
+      enum: ["Grooming", "Training", "Walking", "Pet Sitting", "Pet Insurance", "General Inquiry", "General Enquiry"],
       required: true,
+      default: "Grooming",
     },
 
     assignedTo: {
@@ -154,7 +156,9 @@ leadSchema.pre("findOneAndDelete", async function () {
 });
 
 leadSchema.pre("deleteOne", { document: true, query: true }, async function () {
-  const id = this._id || (this.getQuery && (await this.model.findOne(this.getQuery()))?._id);
+  const id =
+    this._id ||
+    (this.getQuery && (await this.model.findOne(this.getQuery()))?._id);
   if (id) {
     await mongoose.model("Followup").deleteMany({ leadId: id });
     await mongoose.model("Conversation").deleteMany({ leadId: id });

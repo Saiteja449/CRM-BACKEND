@@ -36,4 +36,9 @@ router.route("/knowledge-base").get(getKB).post(createKB);
 
 router.route("/knowledge-base/:id").delete(deleteKB);
 
+// Testing Route
+import { testAI, getTestAIHistory } from "../controllers/whatsappController.js";
+router.post("/test-ai", testAI);
+router.get("/test-ai", getTestAIHistory);
+
 export default router;

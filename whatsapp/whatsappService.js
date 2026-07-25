@@ -76,6 +76,22 @@ const updateSessionStatus = async (
 };
 export const connectWhatsApp = async (sessionId) => {
   if (!sessionId) sessionId = "device_1";
+
+  // Prevent duplicate connection attempts for the same active session
+  if (sessions[sessionId]) {
+    if (sessions[sessionId].status === "connected" || sessions[sessionId].status === "connecting") {
+      console.log(`[DEBUG] WhatsApp session ${sessionId} is already active (${sessions[sessionId].status}). Skipping connect.`);
+      return;
+    }
+    // Clean up dangling socket before starting a new connection
+    if (sessions[sessionId].sock) {
+      try {
+        sessions[sessionId].sock.end();
+      } catch (e) {}
+      sessions[sessionId].sock = null;
+    }
+  }
+
   try {
     const authFolder = path.join(
       __dirname,
@@ -159,14 +175,9 @@ export const connectWhatsApp = async (sessionId) => {
           console.log("Message type:", Object.keys(msg.message || {}));
           console.log("Push name:", msg.pushName);
 
-          if (eventType === "notify") {
+          if (eventType === "notify" || eventType === "append") {
             console.log(
-              `Processing message - fromMe: ${msg.key.fromMe}, remoteJid: ${msg.key.remoteJid}`,
-            );
-            await handleIncomingOrOutgoingMessage(
-              msg,
-              sessionId,
-              msg.key.fromMe,
+              `Processing message from: ${msg.key.remoteJid} (fromMe: ${msg.key.fromMe})`,
             );
           } else {
             console.log(
@@ -213,6 +224,17 @@ export const logoutWhatsApp = async (sessionId) => {
 
 const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
   try {
+    const messageId = msg.key.id;
+
+    // 1. Check if message already exists in DB to avoid duplicate processing
+    const existingMsg = await Message.findOne({ messageId });
+    if (existingMsg) {
+      console.log(
+        `[DEBUG] Message ${messageId} already exists in DB. Skipping to avoid duplicates.`,
+      );
+      return;
+    }
+
     const remoteJid = msg.key.remoteJid;
     const remoteJidAlt = msg.key.remoteJidAlt;
 
@@ -225,31 +247,35 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
       return;
     }
 
-    const phoneJid = remoteJidAlt || remoteJid;
-    const phone = normalizePhone(phoneJid);
-
-    // Skip processing if phone is the user's own connected WhatsApp phone number (prevent self-lead generation)
-    const sock = sessions[sessionId]?.sock;
-    const ownPhone = sock?.user?.id ? normalizePhone(sock.user.id) : null;
-    if (
-      ownPhone &&
-      (phone === ownPhone ||
-        ownPhone.endsWith(phone) ||
-        phone.endsWith(ownPhone))
-    ) {
-      console.log(`Skipping self/sync message with own phone: ${phone}`);
-      return;
+    // Resolve phoneJid: Prefer the phone number JID (@s.whatsapp.net) over the LID (@lid)
+    let phoneJid = remoteJid;
+    if (remoteJidAlt && remoteJidAlt.endsWith("@s.whatsapp.net")) {
+      phoneJid = remoteJidAlt;
+    } else if (remoteJid && remoteJid.endsWith("@s.whatsapp.net")) {
+      phoneJid = remoteJid;
+    } else if (remoteJidAlt) {
+      phoneJid = remoteJidAlt;
     }
 
-    const messageId = msg.key.id;
+    const phone = normalizePhone(phoneJid);
+    const isLid = phoneJid && phoneJid.endsWith("@lid");
 
-    // Check if message already exists (deduplication)
-    const existingMessage = await Message.findOne({ messageId });
-    if (existingMessage) {
-      console.log(
-        `[DEBUG] Message ${messageId} already exists in DB. Skipping duplicate.`,
-      );
-      return;
+    // Skip messages sent to own number
+    const sock = sessions[sessionId]?.sock;
+    if (sock && sock.user && sock.user.id) {
+      const myPhone = sock.user.id
+        .split(":")[0]
+        .split("@")[0]
+        .replace(/\D/g, "");
+      // Direct comparison, ignoring any extra characters
+      if (
+        phone === myPhone ||
+        phone.endsWith(myPhone) ||
+        myPhone.endsWith(phone)
+      ) {
+        console.log(`[DEBUG] Skipping message sent to own number: ${phone}`);
+        return;
+      }
     }
 
     const timestamp = new Date(
@@ -258,7 +284,7 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
     const pushName = msg.pushName || "WhatsApp User";
 
     console.log(
-      `Processing message - Phone: ${phone}, Name: ${pushName}, JID: ${remoteJid}, AltJID: ${remoteJidAlt || "none"}, fromMe: ${fromMe}`,
+      `Processing message - Phone: ${phone}, Name: ${pushName}, JID: ${remoteJid}, AltJID: ${remoteJidAlt || "none"}, isLid: ${isLid}`,
     );
 
     let messageType = "text";
@@ -291,11 +317,12 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
     } else if (msgContent.extendedTextMessage) {
       messageType = "text";
       textContent = msgContent.extendedTextMessage.text || "";
-    } else if (msgContent.imageMessage) {
+    } else if (msgContent.imageMessage || msgContent.videoMessage) {
       messageType = "text";
-      textContent = msgContent.imageMessage.caption
-        ? `[Image with caption: ${msgContent.imageMessage.caption}] (Images are disabled)`
-        : "[Image attachment disabled]";
+      const caption = msgContent.imageMessage?.caption || msgContent.videoMessage?.caption;
+      textContent = caption
+        ? `[Media with caption: ${caption}] (Images/Videos are disabled)`
+        : "[Image/Video attachment disabled]";
       mediaUrl = "";
     } else if (msgContent.audioMessage) {
       messageType = "audio";
@@ -331,14 +358,20 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
     let isNewLead = false;
 
     if (!lead) {
-      const leadName = fromMe ? phone : (pushName || "WhatsApp User");
-      console.log(`[DEBUG] Lead not found, creating new lead for ${leadName}`);
+      // Do NOT create a lead if the identifier is a LID (not a real phone number)
+      // or if the message is outgoing (sent by us/fromMe) to a non-existent lead
+      if (isLid || msg.key.fromMe) {
+        console.log(`[DEBUG] Skipping lead creation for LID or outgoing message. Phone/LID: ${phone}`);
+        return;
+      }
+
+      console.log(`[DEBUG] Lead not found, creating new lead for ${pushName}`);
       isNewLead = true;
       lead = new Lead({
         name: leadName,
         phone: phone,
         source: "WhatsApp",
-        service: "General Enquiry", // Satisfies MongoDB required field
+        service: "General Inquiry", // Satisfies MongoDB required field
         status: "New",
         joinedAt: new Date(),
         notes: fromMe
@@ -413,19 +446,20 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
     }
 
     // 3. Create message record
+    const isFromMe = msg.key.fromMe;
     const messageRecord = await Message.create({
       messageId,
       leadId: lead._id,
-      sender: fromMe ? "agent" : phone,
-      direction: fromMe ? "outgoing" : "incoming",
+      sender: isFromMe ? "petsfolio user" : phone,
+      direction: isFromMe ? "outgoing" : "incoming",
       messageType,
       text: textContent,
       mediaUrl,
       timestamp,
       aiGenerated: false,
       delivered: true,
-      read: fromMe ? true : false,
-      status: fromMe ? "sent" : "received",
+      read: false,
+      status: isFromMe ? "sent" : "received",
     });
 
     // 4. Update Conversation session meta
@@ -466,37 +500,9 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
     );
 
     // 6. Asynchronously trigger AI agent response with 4-second debounce
-    // (Only trigger AI if the message is INCOMING, i.e., not fromMe)
-    /* Temporarily disabled by user request
-    if (!fromMe && lead.aiEnabled) {
-      const firstContactTime = lead.joinedAt ? new Date(lead.joinedAt) : new Date();
-      const timeDiff = Date.now() - firstContactTime.getTime();
-      const twentyFourHours = 24 * 60 * 60 * 1000;
-
-      if (timeDiff > twentyFourHours) {
-        // Disable AI
-        lead.aiEnabled = false;
-        await Lead.findByIdAndUpdate(lead._id, { aiEnabled: false });
-
-        await Notification.create({
-          title: "AI Disabled - 24-Hour Expiration",
-          message: `AI has been disabled for ${lead.name} (${lead.phone}) because the 24-hour window from the first message has expired.`,
-          type: "lead_update",
-          targetRoles: ["sales manager", "sales person"],
-        });
-
-        const io = getIO();
-        if (io) {
-          io.to(lead._id.toString()).emit("conversation_updated", {
-            leadId: lead._id,
-            lead,
-          });
-        }
-        console.log(`[DEBUG] 24 hours expired for lead ID: ${lead._id}. Disabling AI.`);
-      } else {
-        console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
-        triggerAIDebounced(lead, remoteJid, textContent, sessionId);
-      }
+    if (!isFromMe && lead.aiEnabled) {
+      console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
+      triggerAIDebounced(lead, remoteJid, textContent, sessionId);
     }
     */
   } catch (error) {
@@ -745,7 +751,7 @@ export const sendMessageFromCRM = async (
   const messageRecord = await Message.create({
     messageId,
     leadId: lead._id,
-    sender: "agent",
+    sender: "petsfolio user",
     senderName,
     direction: "outgoing",
     messageType: "text",

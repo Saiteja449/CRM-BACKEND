@@ -15,6 +15,7 @@ import notificationRoutes from "./routes/notificationRoutes.js";
 import metaRoutes from "./routes/metaRoutes.js";
 import followupRoutes from "./routes/followupRoutes.js";
 import analyticsRoutes from "./routes/analyticsRoutes.js";
+import targetRoutes from "./routes/targetRoutes.js";
 
 // Socket & WhatsApp Imports
 import { initSocket } from "./socket/socket.js";
@@ -48,7 +49,7 @@ app.use(
       callback(null, true);
     },
     credentials: true,
-  })
+  }),
 );
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -66,6 +67,7 @@ app.use("/api/notifications", notificationRoutes);
 app.use("/api/meta", metaRoutes);
 app.use("/api/followups", followupRoutes);
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/targets", targetRoutes);
 
 // Base route
 app.get("/", (req, res) => {
@@ -83,7 +85,7 @@ const PORT = process.env.PORT || 5000;
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
-  
+
   // Auto-connect WhatsApp on server start to resume session
   connectWhatsApp();
 });

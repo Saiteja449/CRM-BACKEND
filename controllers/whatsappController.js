@@ -32,12 +32,13 @@ export const getStatus = async (req, res) => {
 
     const result = memoryStatuses.map((mem) => {
       const db = dbSessions.find(s => s.sessionId === mem.sessionId);
+      const status = mem.status || db?.status || "disconnected";
       return {
         sessionId: mem.sessionId,
-        status: db?.status || mem.status,
-        qrCode: mem.qrCode || db?.qrCode || "",
-        connectedPhone: db?.connectedPhone || mem.connectedPhone || "",
-        connectedName: db?.connectedName || mem.connectedName || "",
+        status: status,
+        qrCode: status === "qr" ? (mem.qrCode || db?.qrCode || "") : "",
+        connectedPhone: mem.connectedPhone || db?.connectedPhone || "",
+        connectedName: mem.connectedName || db?.connectedName || "",
       };
     });
 
@@ -221,4 +222,120 @@ export const deleteKB = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Test AI Response without WhatsApp
+// @route   POST /api/whatsapp/test-ai
+// @access  Public
+export const testAI = async (req, res) => {
+  try {
+    const { message, leadId, reset } = req.body;
+    
+    if (!message && !reset) {
+      return res.status(400).json({ message: "message is required." });
+    }
+
+    let lead;
+    if (leadId) {
+      lead = await Lead.findById(leadId);
+    } else {
+      // Find or create dummy lead
+      lead = await Lead.findOne({ phone: "0000000000" });
+      if (!lead) {
+        lead = await Lead.create({
+          name: "Test User",
+          phone: "0000000000",
+          service: "General Inquiry",
+          source: "Manual Entry",
+        });
+      }
+    }
+
+    if (!lead) {
+      return res.status(404).json({ message: "Lead not found" });
+    }
+
+    if (reset) {
+      await Message.deleteMany({ leadId: lead._id });
+      await Lead.findByIdAndUpdate(lead._id, {
+        aiQualification: {
+          petType: "",
+          breed: "",
+          petAge: "",
+          city: "",
+          intent: "",
+          budget: "",
+          specialRequirements: "",
+          urgency: "",
+          interestScore: 0
+        },
+        aiEnabled: true,
+        disableAI: false
+      });
+      return res.status(200).json({ message: "Test lead reset successfully." });
+    }
+
+    const { generateAIResponse } = await import("../ai/aiService.js");
+
+    // Save incoming
+    const incoming = await Message.create({
+      messageId: `test-in-${Date.now()}`,
+      sender: lead.phone,
+      leadId: lead._id,
+      text: message,
+      direction: "incoming",
+      timestamp: new Date()
+    });
+
+    const aiResponseText = await generateAIResponse(lead._id, message);
+
+    // Save outgoing
+    const outgoing = await Message.create({
+      messageId: `test-out-${Date.now()}`,
+      sender: "AI Agent",
+      leadId: lead._id,
+      text: aiResponseText,
+      direction: "outgoing",
+      timestamp: new Date()
+    });
+
+    const updatedLead = await Lead.findById(lead._id);
+
+    res.status(200).json({
+      incoming,
+      outgoing,
+      aiQualification: updatedLead.aiQualification,
+      leadId: lead._id
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+export const getTestAIHistory = async (req, res) => {
+  try {
+    let lead = await Lead.findOne({ phone: "0000000000" });
+    if (!lead) {
+      lead = await Lead.create({
+        name: "Test User",
+        phone: "0000000000",
+        service: "General Inquiry",
+        source: "Manual Entry",
+      });
+    }
+
+    const messages = await Message.find({ leadId: lead._id }).sort({ timestamp: 1 });
+    
+    res.status(200).json({
+      leadId: lead._id,
+      aiQualification: lead.aiQualification,
+      messages: messages.map(m => ({
+        text: m.text,
+        role: m.direction === "incoming" ? "user" : "ai"
+      }))
+    });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 
