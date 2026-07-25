@@ -504,7 +504,6 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
       console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
       triggerAIDebounced(lead, remoteJid, textContent, sessionId);
     }
-    */
   } catch (error) {
     console.error(
       "Error processing incoming/outgoing WhatsApp message:",

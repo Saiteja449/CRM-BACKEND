@@ -328,16 +328,51 @@ CRITICAL RULES:
     });
 
     const modelsToTry = [
-      modelOpenRouterFallback.withStructuredOutput(qualificationSchema, {
-        name: "generate_response",
-        method: "functionCalling",
-      }),
-      modelGroqPrimary.withStructuredOutput(qualificationSchema, {
-        name: "generate_response",
-        method: "functionCalling",
-      }),
-      modelGeminiFallback.withStructuredOutput(qualificationSchema),
+      { name: "OpenRouter", baseModel: modelOpenRouterFallback, method: "jsonMode" },
+      { name: "Groq", baseModel: modelGroqPrimary, method: "jsonMode" },
+      { name: "Gemini", baseModel: modelGeminiFallback }
     ];
+
+    const jsonSchemaString = `
+YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RETURN MARKDOWN OR TEXT.
+{
+  "reply": "string (Your reply text to the user)",
+  "qualification": {
+    "petType": "string",
+    "breed": "string",
+    "petAge": "string",
+    "city": "string",
+    "intent": "string",
+    "specialRequirements": "string",
+    "urgency": "string (High, Medium, Low)",
+    "interestScore": "number (1-10)"
+  },
+  "tags": ["string"],
+  "disableAI": "boolean",
+  "summary": "string",
+  "sentiment": "string (Positive, Neutral, Negative)",
+  "probabilityOfConversion": "number (0-100)",
+  "nextAction": "string",
+  "triggerActions": {
+    "createFollowUp": "boolean",
+    "followUpNotes": "string",
+    "followUpDate": "string",
+    "addNote": "string"
+  }
+}`;
+
+    const extractJSON = (text) => {
+      try {
+        const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+        if (match) return JSON.parse(match[1]);
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start !== -1 && end !== -1) return JSON.parse(text.substring(start, end + 1));
+        return JSON.parse(text);
+      } catch (e) {
+        return null;
+      }
+    };
 
     let parsed = null;
     let lastError = null;
@@ -345,17 +380,44 @@ CRITICAL RULES:
     console.log("Generating AI response with fallback strategy...");
 
     for (let i = 0; i < modelsToTry.length; i++) {
+      const currentModel = modelsToTry[i];
       try {
-        parsed = await modelsToTry[i].invoke([
-          ["system", systemPrompt],
-          ["user", incomingText],
-        ]);
-        console.log(`Success with model index ${modelsToTry[i].name}`);
+        console.log(`Attempting model: ${currentModel.name}`);
+        const localSystemPrompt = systemPrompt + "\n\n" + jsonSchemaString;
+
+        try {
+          // Attempt 1: Native structured output
+          const structuredModel = currentModel.baseModel.withStructuredOutput(
+            qualificationSchema,
+            currentModel.method ? { name: "generate_response", method: currentModel.method } : undefined
+          );
+          parsed = await structuredModel.invoke([
+            ["system", systemPrompt], // Uses standard prompt for native structured output
+            ["user", incomingText],
+          ]);
+        } catch (err) {
+          console.warn(`Native structured output threw an error for ${currentModel.name}, trying manual JSON extraction...`);
+        }
+
+        if (!parsed) {
+          // Attempt 2: Manual extraction
+          const rawResponse = await currentModel.baseModel.invoke([
+            ["system", localSystemPrompt],
+            ["user", incomingText],
+          ]);
+          parsed = extractJSON(rawResponse.content);
+        }
+
+        if (!parsed) {
+          throw new Error("Model failed to produce valid JSON via native calling AND manual extraction.");
+        }
+
+        console.log(`Success with model: ${currentModel.name}`);
         break;
       } catch (e) {
         lastError = e;
         console.warn(
-          `Model ${modelsToTry[i].name} fallback index ${i} failed: ${e.message}`,
+          `Model ${currentModel.name} fallback index ${i} failed. Error message: ${e.message}`
         );
       }
     }
