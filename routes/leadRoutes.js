@@ -9,6 +9,7 @@ import {
   updateLead,
   deleteLead,
   updateStatusByWebhook,
+  analyzeRecording,
 } from "../controllers/leadController.js";
 
 const router = express.Router();
@@ -33,5 +34,6 @@ router.route("/paginated").get(getPaginatedLeads);
 router.post("/webhook/status", updateStatusByWebhook);
 
 router.route("/:id").put(upload.single("recording"), updateLead).delete(deleteLead);
+router.post("/:id/analyze-recording/:recordingId", analyzeRecording);
 
 export default router;

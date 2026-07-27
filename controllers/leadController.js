@@ -8,6 +8,37 @@ import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
 import AILog from "../models/AILog.js";
 import { getIO } from "../socket/socket.js";
+import fs from "fs";
+import path from "path";
+import { analyzeAudioFile } from "../services/audioAnalysisService.js";
+
+// Helper for background audio analysis
+const triggerAudioAnalysis = async (leadId, recordingId, filePath, mimeType) => {
+  try {
+    console.log(`[AudioAnalysis] Starting background analysis for lead ${leadId}, recording ${recordingId}`);
+    const analysis = await analyzeAudioFile(filePath, mimeType);
+    await Lead.updateOne(
+      { _id: leadId, "recordings._id": recordingId },
+      { 
+        $set: { 
+          "recordings.$.analysis": analysis,
+          "recordings.$.analysisStatus": "completed"
+        } 
+      }
+    );
+    console.log(`[AudioAnalysis] Successfully updated analysis for recording ${recordingId}`);
+  } catch (error) {
+    console.error(`[AudioAnalysis] Failed to analyze recording ${recordingId}:`, error);
+    await Lead.updateOne(
+      { _id: leadId, "recordings._id": recordingId },
+      { 
+        $set: { 
+          "recordings.$.analysisStatus": "failed"
+        } 
+      }
+    );
+  }
+};
 
 export const getLeads = async (req, res) => {
   try {
@@ -300,6 +331,7 @@ export const updateLead = async (req, res) => {
       const recordingObj = {
         name: req.body.recordingName || req.file.originalname,
         url: fileUrl,
+        analysisStatus: "pending",
         uploadedAt: new Date(),
       };
       if (!lead.recordings) {
@@ -311,6 +343,12 @@ export const updateLead = async (req, res) => {
     lead.set(updateData);
     await lead.save();
 
+    if (req.file) {
+      const newRecording = lead.recordings[lead.recordings.length - 1];
+      if (newRecording) {
+        triggerAudioAnalysis(lead._id, newRecording._id, req.file.path, req.file.mimetype);
+      }
+    }
 
     if (updateData.status) {
       await Notification.create({
@@ -440,6 +478,36 @@ export const updateStatusByWebhook = async (req, res) => {
       message: `Status successfully updated to "${status}" for lead ${lead.name}.`,
       data: lead,
     });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const analyzeRecording = async (req, res) => {
+  try {
+    const { id, recordingId } = req.params;
+    const lead = await Lead.findById(id);
+    if (!lead) return res.status(404).json({ success: false, message: "Lead not found" });
+
+    const recording = lead.recordings.id(recordingId);
+    if (!recording) return res.status(404).json({ success: false, message: "Recording not found" });
+
+    const filename = recording.url.split("/uploads/")[1];
+    if (!filename) return res.status(400).json({ success: false, message: "Invalid recording URL" });
+
+    const filePath = path.join(process.cwd(), "uploads", filename);
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: "Audio file not found on disk" });
+    }
+
+    recording.analysisStatus = "pending";
+    await lead.save();
+
+    // Trigger in background
+    triggerAudioAnalysis(id, recordingId, filePath, "audio/mp4");
+
+    res.json({ success: true, message: "Analysis triggered successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

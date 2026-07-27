@@ -143,6 +143,8 @@ const leadSchema = new mongoose.Schema(
       {
         name: String,
         url: String,
+        analysis: String,
+        analysisStatus: { type: String, default: "pending" }, // pending, completed, failed
         uploadedAt: { type: Date, default: Date.now },
       },
     ],
