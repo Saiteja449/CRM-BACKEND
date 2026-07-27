@@ -79,8 +79,13 @@ export const connectWhatsApp = async (sessionId) => {
 
   // Prevent duplicate connection attempts for the same active session
   if (sessions[sessionId]) {
-    if (sessions[sessionId].status === "connected" || sessions[sessionId].status === "connecting") {
-      console.log(`[DEBUG] WhatsApp session ${sessionId} is already active (${sessions[sessionId].status}). Skipping connect.`);
+    if (
+      sessions[sessionId].status === "connected" ||
+      sessions[sessionId].status === "connecting"
+    ) {
+      console.log(
+        `[DEBUG] WhatsApp session ${sessionId} is already active (${sessions[sessionId].status}). Skipping connect.`,
+      );
       return;
     }
     // Clean up dangling socket before starting a new connection
@@ -111,7 +116,6 @@ export const connectWhatsApp = async (sessionId) => {
 
     if (!sessions[sessionId]) sessions[sessionId] = {};
     sessions[sessionId].sock = sock;
-
 
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
@@ -158,8 +162,6 @@ export const connectWhatsApp = async (sessionId) => {
 
     sock.ev.on("creds.update", saveCreds);
 
-
-
     sock.ev.on("messages.upsert", async (m) => {
       try {
         console.log("=== messages.upsert event received ===");
@@ -178,6 +180,11 @@ export const connectWhatsApp = async (sessionId) => {
           if (eventType === "notify" || eventType === "append") {
             console.log(
               `Processing message from: ${msg.key.remoteJid} (fromMe: ${msg.key.fromMe})`,
+            );
+            await handleIncomingOrOutgoingMessage(
+              msg,
+              sessionId,
+              msg.key.fromMe,
             );
           } else {
             console.log(
@@ -319,7 +326,8 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
       textContent = msgContent.extendedTextMessage.text || "";
     } else if (msgContent.imageMessage || msgContent.videoMessage) {
       messageType = "text";
-      const caption = msgContent.imageMessage?.caption || msgContent.videoMessage?.caption;
+      const caption =
+        msgContent.imageMessage?.caption || msgContent.videoMessage?.caption;
       textContent = caption
         ? `[Media with caption: ${caption}] (Images/Videos are disabled)`
         : "[Image/Video attachment disabled]";
@@ -361,14 +369,16 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
       // Do NOT create a lead if the identifier is a LID (not a real phone number)
       // or if the message is outgoing (sent by us/fromMe) to a non-existent lead
       if (isLid || msg.key.fromMe) {
-        console.log(`[DEBUG] Skipping lead creation for LID or outgoing message. Phone/LID: ${phone}`);
+        console.log(
+          `[DEBUG] Skipping lead creation for LID or outgoing message. Phone/LID: ${phone}`,
+        );
         return;
       }
 
       console.log(`[DEBUG] Lead not found, creating new lead for ${pushName}`);
       isNewLead = true;
       lead = new Lead({
-        name: leadName,
+        name: pushName,
         phone: phone,
         source: "WhatsApp",
         service: "General Inquiry", // Satisfies MongoDB required field
@@ -421,7 +431,10 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
       });
     } else {
       // Update existing lead timestamps and latest message
-      const updatedFields = { lastMessage: textContent, lastActivity: timestamp };
+      const updatedFields = {
+        lastMessage: textContent,
+        lastActivity: timestamp,
+      };
       const isPlaceholderName =
         lead.name === lead.phone ||
         lead.name === "WhatsApp User" ||
@@ -430,13 +443,20 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
 
       if (isPlaceholderName) {
         let betterName = null;
-        if (!fromMe && pushName && pushName !== "WhatsApp User" && pushName !== "WhatsApp Contact") {
+        if (
+          !fromMe &&
+          pushName &&
+          pushName !== "WhatsApp User" &&
+          pushName !== "WhatsApp Contact"
+        ) {
           betterName = pushName;
         }
         if (betterName) {
           updatedFields.name = betterName;
           lead.name = betterName; // Sync memory instance for socket broadcast
-          console.log(`[DEBUG] Updating lead name from placeholder to '${betterName}'`);
+          console.log(
+            `[DEBUG] Updating lead name from placeholder to '${betterName}'`,
+          );
         }
       }
 
@@ -500,10 +520,10 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
     );
 
     // 6. Asynchronously trigger AI agent response with 4-second debounce
-    if (!isFromMe && lead.aiEnabled) {
-      console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
-      triggerAIDebounced(lead, remoteJid, textContent, sessionId);
-    }
+    // if (!isFromMe && lead.aiEnabled) {
+    //   console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
+    //   triggerAIDebounced(lead, remoteJid, textContent, sessionId);
+    // }
   } catch (error) {
     console.error(
       "Error processing incoming/outgoing WhatsApp message:",
