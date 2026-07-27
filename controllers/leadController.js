@@ -213,7 +213,7 @@ export const getPaginatedLeads = async (req, res) => {
 
 export const createLead = async (req, res) => {
   try {
-    const leadData = req.body;
+    const leadData = req.body || {};
 
     if (leadData.phone) {
       const existingLead = await Lead.findOne({ phone: leadData.phone });
@@ -281,7 +281,11 @@ export const createLead = async (req, res) => {
 export const updateLead = async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
+    const updateData = req.body || {};
+    console.log("updateData update Lead");
+    console.log(updateData);
+    console.log("updated");
+
 
     const lead = await Lead.findById(id);
 
