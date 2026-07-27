@@ -293,14 +293,18 @@ export const updateLead = async (req, res) => {
 
     if (req.file) {
       const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-      lead.recordings.push({
+      const recordingObj = {
         name: req.body.recordingName || req.file.originalname,
         url: fileUrl,
         uploadedAt: new Date(),
-      });
+      };
+      if (!lead.recordings) {
+        lead.recordings = [];
+      }
+      lead.recordings.push(recordingObj);
     }
 
-    Object.assign(lead, updateData);
+    lead.set(updateData);
     await lead.save();
 
 
