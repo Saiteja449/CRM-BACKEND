@@ -44,7 +44,7 @@ export const analyzeAudioFile = async (filePath, mimeType) => {
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
     // Initialize the model
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     // Generate the summary
     const prompt = `
