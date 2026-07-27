@@ -139,6 +139,13 @@ const leadSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    recordings: [
+      {
+        name: String,
+        url: String,
+        uploadedAt: { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true },
 );

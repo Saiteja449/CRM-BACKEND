@@ -250,6 +250,15 @@ export const createLead = async (req, res) => {
       leadData.joinedAt = new Date();
     }
 
+    if (req.file) {
+      const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+      leadData.recordings = [{
+        name: req.body.recordingName || req.file.originalname,
+        url: fileUrl,
+        uploadedAt: new Date(),
+      }];
+    }
+
     const lead = await Lead.create(leadData);
 
     const assignedUser = await User.findOne({ name: lead.assignedTo });
@@ -274,13 +283,26 @@ export const updateLead = async (req, res) => {
     const { id } = req.params;
     const updateData = req.body;
 
-    const lead = await Lead.findByIdAndUpdate(id, updateData, { new: true });
+    const lead = await Lead.findById(id);
 
     if (!lead) {
       return res
         .status(404)
         .json({ success: false, message: "Lead not found" });
     }
+
+    if (req.file) {
+      const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+      lead.recordings.push({
+        name: req.body.recordingName || req.file.originalname,
+        url: fileUrl,
+        uploadedAt: new Date(),
+      });
+    }
+
+    Object.assign(lead, updateData);
+    await lead.save();
+
 
     if (updateData.status) {
       await Notification.create({
