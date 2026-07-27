@@ -51,11 +51,10 @@ export const analyzeAudioFile = async (filePath, mimeType) => {
       You are an expert sales analyst reviewing a phone call recording between a sales representative and a prospective customer.
       Please listen to this call recording and provide a clear, concise summary formatted in Markdown.
       
-      Include the following sections:
-      1. **Call Summary**: A 2-3 sentence overview of what the call was about.
-      2. **Key Discussion Points**: Bullet points of the main topics discussed (e.g., pricing, services, requirements).
-      3. **Customer Sentiment**: How interested or hesitant did the customer sound? (e.g., Positive, Hesitant, Negative).
-      4. **Action Items**: Next steps for the sales representative (e.g., Send quote, Follow up next Tuesday).
+      Include exactly these three sections:
+      1. **Short Summary**: A brief 2-3 sentence overview of what the call was about.
+      2. **Call Rating**: Rate the call (e.g., 1 to 5 stars or a percentage) based strictly on the prospective customer's level of interest and engagement. Explain briefly why.
+      3. **Suggested Improvements**: Actionable feedback and constructive suggestions for the sales caller on how they could improve their pitch, handling of objections, or communication style.
       
       If the audio is completely silent or unrecognizable, please output a single sentence stating that the audio could not be analyzed.
     `;
