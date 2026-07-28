@@ -31,14 +31,16 @@ export const analyzeAudioFile = async (filePath, mimeType) => {
 
   try {
     console.log(`[AudioAnalysis] Uploading file to Gemini: ${filePath}`);
-    
+
     // Upload the file to Gemini's File API
     const uploadResponse = await fileManager.uploadFile(filePath, {
       mimeType: mimeType || "audio/mp4",
       displayName: "Sales Call Recording",
     });
 
-    console.log(`[AudioAnalysis] Upload complete. File URI: ${uploadResponse.file.uri}`);
+    console.log(
+      `[AudioAnalysis] Upload complete. File URI: ${uploadResponse.file.uri}`,
+    );
 
     // Wait briefly to ensure file is processed by Gemini
     await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -48,16 +50,31 @@ export const analyzeAudioFile = async (filePath, mimeType) => {
 
     // Generate the summary
     const prompt = `
-      You are an expert sales analyst reviewing a phone call recording between a sales representative and a prospective customer.
-      Please listen to this call recording and provide a clear, concise summary formatted in Markdown.
-      
-      Include exactly these three sections:
-      1. **Short Summary**: A brief 2-3 sentence overview of what the call was about.
-      2. **Call Rating**: Rate the call (e.g., 1 to 5 stars or a percentage) based strictly on the prospective customer's level of interest and engagement. Explain briefly why.
-      3. **Suggested Improvements**: Actionable feedback and constructive suggestions for the sales caller on how they could improve their pitch, handling of objections, or communication style.
-      
-      If the audio is completely silent or unrecognizable, please output a single sentence stating that the audio could not be analyzed.
-    `;
+You are an AI sales call analyzer.
+
+The conversation is between a sales representative and a customer about pet services.
+
+Analyze the audio and return ONLY Markdown in the following format.
+
+## Short Summary
+Maximum 2 sentences.
+
+## Rating
+Give a rating out of 5.
+
+Reason:
+Explain the rating in exactly 6 words.
+
+## Suggestions
+Provide 3 short bullet points (maximum 8 words each) to help the salesperson improve.
+
+Rules:
+- Keep the entire response under 120 words.
+- Be concise.
+- Base the rating on customer interest, salesperson communication, objection handling, and closing.
+- If the audio is silent, corrupted, or not understandable, reply:
+"The audio could not be analyzed."
+`;
 
     console.log(`[AudioAnalysis] Requesting content generation from Gemini...`);
     const result = await model.generateContent([
@@ -72,14 +89,19 @@ export const analyzeAudioFile = async (filePath, mimeType) => {
 
     const analysis = result.response.text();
     console.log(`[AudioAnalysis] Analysis complete for ${filePath}`);
-    
-    // Optionally delete the file from Gemini storage to save space, 
+
+    // Optionally delete the file from Gemini storage to save space,
     // or let it expire after 48 hours (default behavior).
     try {
       await fileManager.deleteFile(uploadResponse.file.name);
-      console.log(`[AudioAnalysis] Cleaned up file from Gemini storage: ${uploadResponse.file.name}`);
+      console.log(
+        `[AudioAnalysis] Cleaned up file from Gemini storage: ${uploadResponse.file.name}`,
+      );
     } catch (cleanupErr) {
-      console.error(`[AudioAnalysis] Failed to cleanup file ${uploadResponse.file.name}:`, cleanupErr.message);
+      console.error(
+        `[AudioAnalysis] Failed to cleanup file ${uploadResponse.file.name}:`,
+        cleanupErr.message,
+      );
     }
 
     return analysis;

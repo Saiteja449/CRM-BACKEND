@@ -282,7 +282,9 @@ export const createLead = async (req, res) => {
     }
 
     if (req.file) {
-      const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+      const host = req.get("host");
+      const basePath = host.includes("holyminicow.com") ? "/crm-beta/uploads/" : "/uploads/";
+      const fileUrl = `${req.protocol}://${host}${basePath}${req.file.filename}`;
       leadData.recordings = [{
         name: req.body.recordingName || req.file.originalname,
         url: fileUrl,
@@ -327,7 +329,9 @@ export const updateLead = async (req, res) => {
     }
 
     if (req.file) {
-      const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
+      const host = req.get("host");
+      const basePath = host.includes("holyminicow.com") ? "/crm-beta/uploads/" : "/uploads/";
+      const fileUrl = `${req.protocol}://${host}${basePath}${req.file.filename}`;
       const recordingObj = {
         name: req.body.recordingName || req.file.originalname,
         url: fileUrl,
@@ -492,8 +496,15 @@ export const analyzeRecording = async (req, res) => {
     const recording = lead.recordings.id(recordingId);
     if (!recording) return res.status(404).json({ success: false, message: "Recording not found" });
 
-    const filename = recording.url.split("/uploads/")[1];
+    let filename = recording.url.split("/uploads/")[1];
     if (!filename) return res.status(400).json({ success: false, message: "Invalid recording URL" });
+
+    // Decode filename for older files that may contain URL-encoded characters (like %20 for spaces)
+    try {
+      filename = decodeURIComponent(filename);
+    } catch (e) {
+      // Ignored
+    }
 
     const filePath = path.join(process.cwd(), "uploads", filename);
 
