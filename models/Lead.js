@@ -27,7 +27,15 @@ const leadSchema = new mongoose.Schema(
     },
     service: {
       type: String,
-      enum: ["Grooming", "Training", "Walking", "Pet Sitting", "Pet Insurance", "General Inquiry", "General Enquiry"],
+      enum: [
+        "Grooming",
+        "Training",
+        "Walking",
+        "Pet Sitting",
+        "Pet Insurance",
+        "General Inquiry",
+        "General Enquiry",
+      ],
       required: true,
       default: "Grooming",
     },
@@ -72,6 +80,7 @@ const leadSchema = new mongoose.Schema(
     },
     notes: {
       type: String,
+      default: "No message provided",
     },
     city: {
       type: String,
