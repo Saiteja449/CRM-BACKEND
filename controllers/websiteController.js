@@ -14,7 +14,7 @@ export const receiveWebsiteLead = async (req, res) => {
     if (!location || location.trim() === "")
       errors.push("Location is required");
     if (!service || service.trim() === "") errors.push("Service is required");
-    if (!message || message.trim() === "") errors.push("Message is required");
+    // if (!message || message.trim() === "") errors.push("Message is required");
 
     if (errors.length > 0) {
       return res.status(400).json({ success: false, errors });
@@ -24,7 +24,10 @@ export const receiveWebsiteLead = async (req, res) => {
     if (existingLead) {
       return res
         .status(400)
-        .json({ success: false, message: "A lead with this phone number already exists." });
+        .json({
+          success: false,
+          message: "A lead with this phone number already exists.",
+        });
     }
 
     const leadData = {
@@ -33,7 +36,7 @@ export const receiveWebsiteLead = async (req, res) => {
       email: email,
       city: location,
       service: service,
-      notes: message,
+      notes: message || "No message provided",
       source: "Website Form",
       status: "New",
       assignedTo: "Unassigned",
