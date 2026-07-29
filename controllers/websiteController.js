@@ -22,20 +22,29 @@ export const receiveWebsiteLead = async (req, res) => {
 
     const existingLead = await Lead.findOne({ phone: mobile });
     if (existingLead) {
-      return res
-        .status(400)
-        .json({
-          success: false,
-          message: "A lead with this phone number already exists.",
-        });
+      return res.status(400).json({
+        success: false,
+        message: "A lead with this phone number already exists.",
+      });
     }
+
+    const mapService = (incomingService) => {
+      if (!incomingService) return "General Inquiry";
+      const s = incomingService.toLowerCase();
+      if (s.includes("grooming")) return "Grooming";
+      if (s.includes("training")) return "Training";
+      if (s.includes("walking")) return "Walking";
+      if (s.includes("sitting") || s.includes("boarding")) return "Pet Sitting";
+      if (s.includes("insurance")) return "Pet Insurance";
+      return "General Inquiry";
+    };
 
     const leadData = {
       name: name,
       phone: mobile,
       email: email,
       city: location,
-      service: service,
+      service: mapService(service),
       notes: message || "No message provided",
       source: "Website Form",
       status: "New",
