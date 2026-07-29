@@ -296,7 +296,9 @@ CRITICAL RULES:
 12. OUTPUT: Respond purely via the structured JSON schema.
 13. WHATSAPP FORMATTING (CRITICAL): Do NOT write long paragraphs. Your response MUST be formatted for WhatsApp. Use short, punchy sentences. Add double line breaks between distinct thoughts or steps. Use bullet points or numbered lists where appropriate. Include relevant emojis naturally. NEVER return a huge wall of text.
 14. OFF-TOPIC FILTER: Only respond to questions about Petsfolio, its services (Grooming, Training, Walking, Pet Sitting, Pet Insurance), or general pet care. If the user asks any off-topic or unrelated questions, politely decline and state that you can only assist with Petsfolio-related queries.
-15. FRUSTRATION & REPEATED QUESTIONS: If the user appears frustrated, expresses annoyance, or repeatedly asks a question that was not solved by previous messages, politely answer their question and ask: "Do you need a support team member to assist you?" If the user responds "yes" (or expresses intent to connect with support), you MUST set disableAI=true and inform them that ${assignedRep} from our support team will reach out to them shortly.`;
+15. FRUSTRATION & REPEATED QUESTIONS: If the user appears frustrated, expresses annoyance, or repeatedly asks a question that was not solved by previous messages, politely answer their question and ask: "Do you need a support team member to assist you?" If the user responds "yes" (or expresses intent to connect with support), you MUST set disableAI=true and inform them that ${assignedRep} from our support team will reach out to them shortly.
+16. ONLINE SERVICES: We do NOT offer any online services (including online dog training). All of our services are offered exclusively through our Petsfolio Client Application. If asked about online services, politely inform the user of this policy and provide the APP DOWNLOAD LINKS.
+17. CERTIFIED PROFESSIONALS: Do NOT mention or use phrases like 'certified trainers', 'certified groomers', 'certified walkers', or 'certified sitters' in your responses.`;
 
     const groqApiKey = process.env.GROQ_API_KEY;
     if (!groqApiKey) {
@@ -328,9 +330,13 @@ CRITICAL RULES:
     });
 
     const modelsToTry = [
-      { name: "OpenRouter", baseModel: modelOpenRouterFallback, method: "jsonMode" },
+      {
+        name: "OpenRouter",
+        baseModel: modelOpenRouterFallback,
+        method: "jsonMode",
+      },
       { name: "Groq", baseModel: modelGroqPrimary, method: "jsonMode" },
-      { name: "Gemini", baseModel: modelGeminiFallback }
+      { name: "Gemini", baseModel: modelGeminiFallback },
     ];
 
     const jsonSchemaString = `
@@ -365,9 +371,10 @@ YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RE
       try {
         const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
         if (match) return JSON.parse(match[1]);
-        const start = text.indexOf('{');
-        const end = text.lastIndexOf('}');
-        if (start !== -1 && end !== -1) return JSON.parse(text.substring(start, end + 1));
+        const start = text.indexOf("{");
+        const end = text.lastIndexOf("}");
+        if (start !== -1 && end !== -1)
+          return JSON.parse(text.substring(start, end + 1));
         return JSON.parse(text);
       } catch (e) {
         return null;
@@ -389,14 +396,18 @@ YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RE
           // Attempt 1: Native structured output
           const structuredModel = currentModel.baseModel.withStructuredOutput(
             qualificationSchema,
-            currentModel.method ? { name: "generate_response", method: currentModel.method } : undefined
+            currentModel.method
+              ? { name: "generate_response", method: currentModel.method }
+              : undefined,
           );
           parsed = await structuredModel.invoke([
             ["system", systemPrompt], // Uses standard prompt for native structured output
             ["user", incomingText],
           ]);
         } catch (err) {
-          console.warn(`Native structured output threw an error for ${currentModel.name}, trying manual JSON extraction...`);
+          console.warn(
+            `Native structured output threw an error for ${currentModel.name}, trying manual JSON extraction...`,
+          );
         }
 
         if (!parsed) {
@@ -409,7 +420,9 @@ YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RE
         }
 
         if (!parsed) {
-          throw new Error("Model failed to produce valid JSON via native calling AND manual extraction.");
+          throw new Error(
+            "Model failed to produce valid JSON via native calling AND manual extraction.",
+          );
         }
 
         console.log(`Success with model: ${currentModel.name}`);
@@ -417,7 +430,7 @@ YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RE
       } catch (e) {
         lastError = e;
         console.warn(
-          `Model ${currentModel.name} fallback index ${i} failed. Error message: ${e.message}`
+          `Model ${currentModel.name} fallback index ${i} failed. Error message: ${e.message}`,
         );
       }
     }

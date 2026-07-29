@@ -1,8 +1,8 @@
 import makeWASocket, {
-  useMultiFileAuthState,
   DisconnectReason,
   downloadMediaMessage,
 } from "@whiskeysockets/baileys";
+import { useMongoDBAuthState } from "./useMongoDBAuthState.js";
 import pino from "pino";
 import fs from "fs";
 import path from "path";
@@ -98,12 +98,7 @@ export const connectWhatsApp = async (sessionId) => {
   }
 
   try {
-    const authFolder = path.join(
-      __dirname,
-      "..",
-      `whatsapp_auth_info_${sessionId}`,
-    );
-    const { state, saveCreds } = await useMultiFileAuthState(authFolder);
+    const { state, saveCreds } = await useMongoDBAuthState(sessionId);
 
     console.log("Initializing WhatsApp connection via Baileys...");
     updateSessionStatus(sessionId, "connecting");
@@ -204,11 +199,7 @@ export const connectWhatsApp = async (sessionId) => {
 
 export const logoutWhatsApp = async (sessionId) => {
   if (!sessionId) return;
-  const authFolder = path.join(
-    __dirname,
-    "..",
-    `whatsapp_auth_info_${sessionId}`,
-  );
+
   const sock = sessions[sessionId]?.sock;
 
   if (sock) {
@@ -220,9 +211,13 @@ export const logoutWhatsApp = async (sessionId) => {
     sessions[sessionId].sock = null;
   }
 
-  // Delete credentials folder
-  if (fs.existsSync(authFolder)) {
-    fs.rmSync(authFolder, { recursive: true, force: true });
+  // Delete credentials from MongoDB
+  try {
+    const WhatsAppAuthState = (await import("../models/WhatsAppAuthState.js"))
+      .default;
+    await WhatsAppAuthState.deleteMany({ sessionId });
+  } catch (err) {
+    console.error("Failed to clear MongoDB auth state:", err);
   }
 
   console.log("WhatsApp session terminated and auth files removed.");
