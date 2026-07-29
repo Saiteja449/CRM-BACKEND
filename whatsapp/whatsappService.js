@@ -1,6 +1,7 @@
 import makeWASocket, {
   DisconnectReason,
   downloadMediaMessage,
+  fetchLatestBaileysVersion,
 } from "@whiskeysockets/baileys";
 import { useMongoDBAuthState } from "./useMongoDBAuthState.js";
 import pino from "pino";
@@ -99,12 +100,14 @@ export const connectWhatsApp = async (sessionId) => {
 
   try {
     const { state, saveCreds } = await useMongoDBAuthState(sessionId);
+    const { version, isLatest } = await fetchLatestBaileysVersion();
 
-    console.log("Initializing WhatsApp connection via Baileys...");
+    console.log(`Initializing WhatsApp connection via Baileys... (Version: ${version.join(".")})`);
     updateSessionStatus(sessionId, "connecting");
 
     const sock = makeWASocket({
       auth: state,
+      version,
       printQRInTerminal: true,
       logger: pino({ level: "silent" }),
     });
@@ -133,7 +136,7 @@ export const connectWhatsApp = async (sessionId) => {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`WhatsApp connection closed. Status code: ${statusCode}`);
 
-        const shouldReconnect = statusCode !== 401;
+        const shouldReconnect = statusCode !== 401 && statusCode !== 403 && statusCode !== 405;
         if (shouldReconnect) {
           console.log("Attempting to reconnect WhatsApp...");
           setTimeout(() => connectWhatsApp(sessionId), 3000);
@@ -141,7 +144,10 @@ export const connectWhatsApp = async (sessionId) => {
           console.log(
             "WhatsApp session logged out. Cleaning up credentials...",
           );
-          logoutWhatsApp(sessionId);
+          logoutWhatsApp(sessionId).then(() => {
+            console.log("Credentials cleaned. Reinitializing connection to generate new QR code...");
+            setTimeout(() => connectWhatsApp(sessionId), 3000);
+          }).catch(err => console.error("Error during logout:", err));
         }
       } else if (connection === "open") {
         const userJid = sock?.user?.id || "";

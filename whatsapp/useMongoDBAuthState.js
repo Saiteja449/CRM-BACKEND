@@ -1,4 +1,5 @@
-import { initAuthCreds, BufferJSON, proto } from "@whiskeysockets/baileys";
+import { initAuthCreds, BufferJSON, proto, makeCacheableSignalKeyStore } from "@whiskeysockets/baileys";
+import pino from "pino";
 import WhatsAppAuthState from "../models/WhatsAppAuthState.js";
 
 /**
@@ -13,7 +14,7 @@ export const useMongoDBAuthState = async (sessionId) => {
       await WhatsAppAuthState.findOneAndUpdate(
         { sessionId, type: keyId === "creds" ? "creds" : "keys", keyId },
         { data: jsonStr },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       );
     } catch (error) {
       console.error(`[WhatsApp] Failed to write auth data for ${keyId}:`, error);
@@ -54,10 +55,12 @@ export const useMongoDBAuthState = async (sessionId) => {
     await writeData(creds, "creds");
   }
 
+  const logger = pino({ level: "silent" });
+
   return {
     state: {
       creds,
-      keys: {
+      keys: makeCacheableSignalKeyStore({
         get: async (type, ids) => {
           const data = {};
           await Promise.all(
@@ -86,7 +89,7 @@ export const useMongoDBAuthState = async (sessionId) => {
           }
           await Promise.all(tasks);
         },
-      },
+      }, logger),
     },
     saveCreds: () => {
       return writeData(creds, "creds");
