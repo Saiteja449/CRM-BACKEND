@@ -94,9 +94,10 @@ export const getPaginatedLeads = async (req, res) => {
     const applyTabFilter = (q, tab) => {
       if (tab === "OldLeads") {
         q.isOldLead = true;
+        q.status = { $regex: new RegExp("^new$", "i") };
       } else {
-        q.isOldLead = { $ne: true };
         if (tab === "New") {
+          q.isOldLead = { $ne: true };
           q.status = { $regex: new RegExp("^new$", "i") };
         } else if (tab === "TodayFollowup") {
           q.status = { $regex: new RegExp("^follow up$", "i") };
@@ -161,8 +162,8 @@ export const getPaginatedLeads = async (req, res) => {
       {
         $facet: {
           OldLeads: [
-            { $match: { isOldLead: true } },
-            { $count: "count" },
+            { $match: { isOldLead: true, status: { $regex: new RegExp("^new$", "i") } } },
+            { $count: "count" }
           ],
           New: [
             { $match: { isOldLead: { $ne: true }, status: { $regex: new RegExp("^new$", "i") } } },
@@ -171,7 +172,6 @@ export const getPaginatedLeads = async (req, res) => {
           TodayFollowup: [
             {
               $match: {
-                isOldLead: { $ne: true },
                 status: { $regex: new RegExp("^follow up$", "i") },
                 $or: [
                   { nextFollowUp: null },
@@ -185,7 +185,6 @@ export const getPaginatedLeads = async (req, res) => {
           UpcomingFollowup: [
             {
               $match: {
-                isOldLead: { $ne: true },
                 status: { $regex: new RegExp("^follow up$", "i") },
                 nextFollowUp: { $gt: todayStr },
               },
@@ -194,28 +193,27 @@ export const getPaginatedLeads = async (req, res) => {
           ],
           NotAttended: [
             {
-              $match: { isOldLead: { $ne: true }, status: { $regex: new RegExp("^not attended$", "i") } },
+              $match: { status: { $regex: new RegExp("^not attended$", "i") } },
             },
             { $count: "count" },
           ],
           Joined: [
-            { $match: { isOldLead: { $ne: true }, status: { $regex: new RegExp("^joined$", "i") } } },
+            { $match: { status: { $regex: new RegExp("^joined$", "i") } } },
             { $count: "count" },
           ],
           JobPosted: [
-            { $match: { isOldLead: { $ne: true }, status: { $regex: new RegExp("^job posted$", "i") } } },
+            { $match: { status: { $regex: new RegExp("^job posted$", "i") } } },
             { $count: "count" },
           ],
           Converted: [
             {
-              $match: { isOldLead: { $ne: true }, status: { $regex: new RegExp("^job assigned$", "i") } },
+              $match: { status: { $regex: new RegExp("^job assigned$", "i") } },
             },
             { $count: "count" },
           ],
           Lost: [
             {
               $match: {
-                isOldLead: { $ne: true },
                 status: {
                   $in: [
                     new RegExp("^price issue$", "i"),
@@ -450,12 +448,10 @@ export const updateStatusByWebhook = async (req, res) => {
     }
 
     if (!lead) {
-      return res
-        .status(404)
-        .json({
-          success: false,
-          message: "Lead not found matching the criteria.",
-        });
+      return res.status(404).json({
+        success: false,
+        message: "Lead not found matching the criteria.",
+      });
     }
 
     // Prevent reverting status back to previous stages (e.g. from "Job Assigned" back to "Joined")
