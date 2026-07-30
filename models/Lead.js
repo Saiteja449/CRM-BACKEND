@@ -124,6 +124,10 @@ const leadSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    isOldLead: {
+      type: Boolean,
+      default: false,
+    },
     conversationSummary: {
       type: String,
     },
