@@ -244,7 +244,7 @@ export const testAI = async (req, res) => {
         lead = await Lead.create({
           name: "Test User",
           phone: "0000000000",
-          service: "General Inquiry",
+          service: "General Enquiry",
           source: "Manual Entry",
         });
       }
@@ -318,7 +318,7 @@ export const getTestAIHistory = async (req, res) => {
       lead = await Lead.create({
         name: "Test User",
         phone: "0000000000",
-        service: "General Inquiry",
+        service: "General Enquiry",
         source: "Manual Entry",
       });
     }

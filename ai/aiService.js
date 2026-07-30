@@ -493,7 +493,7 @@ YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RE
         "Walking",
         "Pet Sitting",
         "Pet Insurance",
-        "General Inquiry",
+        "General Enquiry",
       ];
       const rawIntent = aiData.intent || "";
 

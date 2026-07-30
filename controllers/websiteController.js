@@ -29,14 +29,14 @@ export const receiveWebsiteLead = async (req, res) => {
     }
 
     const mapService = (incomingService) => {
-      if (!incomingService) return "General Inquiry";
+      if (!incomingService) return "General Enquiry";
       const s = incomingService.toLowerCase();
       if (s.includes("grooming")) return "Grooming";
       if (s.includes("training")) return "Training";
       if (s.includes("walking")) return "Walking";
       if (s.includes("sitting") || s.includes("boarding")) return "Pet Sitting";
       if (s.includes("insurance")) return "Pet Insurance";
-      return "General Inquiry";
+      return "General Enquiry";
     };
 
     const leadData = {
