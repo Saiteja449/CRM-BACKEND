@@ -102,7 +102,9 @@ export const connectWhatsApp = async (sessionId) => {
     const { state, saveCreds } = await useMongoDBAuthState(sessionId);
     const { version, isLatest } = await fetchLatestBaileysVersion();
 
-    console.log(`Initializing WhatsApp connection via Baileys... (Version: ${version.join(".")})`);
+    console.log(
+      `Initializing WhatsApp connection via Baileys... (Version: ${version.join(".")})`,
+    );
     updateSessionStatus(sessionId, "connecting");
 
     const sock = makeWASocket({
@@ -136,7 +138,8 @@ export const connectWhatsApp = async (sessionId) => {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`WhatsApp connection closed. Status code: ${statusCode}`);
 
-        const shouldReconnect = statusCode !== 401 && statusCode !== 403 && statusCode !== 405;
+        const shouldReconnect =
+          statusCode !== 401 && statusCode !== 403 && statusCode !== 405;
         if (shouldReconnect) {
           console.log("Attempting to reconnect WhatsApp...");
           setTimeout(() => connectWhatsApp(sessionId), 3000);
@@ -144,10 +147,14 @@ export const connectWhatsApp = async (sessionId) => {
           console.log(
             "WhatsApp session logged out. Cleaning up credentials...",
           );
-          logoutWhatsApp(sessionId).then(() => {
-            console.log("Credentials cleaned. Reinitializing connection to generate new QR code...");
-            setTimeout(() => connectWhatsApp(sessionId), 3000);
-          }).catch(err => console.error("Error during logout:", err));
+          logoutWhatsApp(sessionId)
+            .then(() => {
+              console.log(
+                "Credentials cleaned. Reinitializing connection to generate new QR code...",
+              );
+              setTimeout(() => connectWhatsApp(sessionId), 3000);
+            })
+            .catch((err) => console.error("Error during logout:", err));
         }
       } else if (connection === "open") {
         const userJid = sock?.user?.id || "";
@@ -359,6 +366,24 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
       `[DEBUG] Extracted content: ${messageType} - "${textContent.substring(0, 30)}..."`,
     );
 
+    let detectedService = null;
+    if (textContent && typeof textContent === "string") {
+      const s = textContent.toLowerCase();
+      if (s.includes("grooming") || s.includes("groom"))
+        detectedService = "Grooming";
+      else if (s.includes("training") || s.includes("train"))
+        detectedService = "Training";
+      else if (s.includes("walking") || s.includes("walk"))
+        detectedService = "Walking";
+      else if (
+        s.includes("sitting") ||
+        s.includes("boarding") ||
+        s.includes("sit")
+      )
+        detectedService = "Pet Sitting";
+      else if (s.includes("insurance")) detectedService = "Pet Insurance";
+    }
+
     console.log(`[DEBUG] Finding lead in DB for phone: ${phone}`);
     let lead = await Lead.findOne({
       $or: [{ phone: phone }, { phone: new RegExp(phone.slice(-10) + "$") }],
@@ -382,7 +407,7 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
         name: pushName,
         phone: phone,
         source: "WhatsApp",
-        service: "General Inquiry", // Satisfies MongoDB required field
+        service: detectedService || "General Enquiry", // Satisfies MongoDB required field
         status: "New",
         joinedAt: new Date(),
         notes: fromMe
@@ -436,6 +461,15 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
         lastMessage: textContent,
         lastActivity: timestamp,
       };
+
+      if (detectedService && lead.service !== detectedService) {
+        updatedFields.service = detectedService;
+        lead.service = detectedService; // Sync memory instance
+        console.log(
+          `[DEBUG] Updating lead service to '${detectedService}' based on message content`,
+        );
+      }
+
       const isPlaceholderName =
         lead.name === lead.phone ||
         lead.name === "WhatsApp User" ||

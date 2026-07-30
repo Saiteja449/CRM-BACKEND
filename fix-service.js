@@ -8,8 +8,19 @@ dotenv.config();
 connectDB().then(async () => {
   try {
     const res = await Lead.updateMany(
-      { service: { $nin: ["Grooming", "Training", "Walking", "Pet Sitting", "Pet Insurance", "General Inquiry"] } },
-      { $set: { service: "Walking" } }
+      {
+        service: {
+          $nin: [
+            "Grooming",
+            "Training",
+            "Walking",
+            "Pet Sitting",
+            "Pet Insurance",
+            "General Enquiry",
+          ],
+        },
+      },
+      { $set: { service: "Walking" } },
     );
     console.log("Cleaned up invalid services:", res);
     process.exit(0);
