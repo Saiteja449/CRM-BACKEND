@@ -112,6 +112,9 @@ export const connectWhatsApp = async (sessionId) => {
       version,
       printQRInTerminal: true,
       logger: pino({ level: "silent" }),
+      keepAliveIntervalMs: 20000, // Send ping every 20s to prevent VPS firewall from dropping the idle socket connection
+      markOnlineOnConnect: true,
+      connectTimeoutMs: 60000,
     });
 
     if (!sessions[sessionId]) sessions[sessionId] = {};
