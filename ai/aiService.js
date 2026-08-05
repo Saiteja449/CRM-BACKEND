@@ -4,6 +4,7 @@ import {
 } from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
 import { QdrantVectorStore } from "@langchain/qdrant";
+import { VoyageAIClient } from "voyageai";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { z } from "zod";
 import path from "path";
@@ -284,8 +285,36 @@ Latest Message: ${incomingText}`;
       const finalSearchQuery = userIntent
         ? `${userIntent} ${optimizedSearchQuery}`
         : optimizedSearchQuery;
-      const results = await vs.similaritySearch(finalSearchQuery, 8);
-      ragContext = results.map((r) => r.pageContent).join("\n\n");
+
+      const results = await vs.similaritySearch(finalSearchQuery, 15);
+      const documents = results.map((r) => r.pageContent);
+
+      if (documents.length > 0 && process.env.VOYAGE_API_KEY) {
+        try {
+          const voyageClient = new VoyageAIClient({
+            apiKey: process.env.VOYAGE_API_KEY,
+          });
+          const rerankRes = await voyageClient.rerank({
+            query: finalSearchQuery,
+            documents: documents,
+            model: "rerank-2.5",
+            topK: 5,
+          });
+          console.log("rerankRes.data", rerankRes.data);
+          if (rerankRes.data) {
+            ragContext = rerankRes.data
+              .map((item) => item.document || documents[item.index])
+              .join("\n\n");
+          } else {
+            ragContext = documents.slice(0, 5).join("\n\n");
+          }
+        } catch (rerankError) {
+          console.warn("Voyage reranking failed:", rerankError.message);
+          ragContext = documents.slice(0, 5).join("\n\n");
+        }
+      } else if (documents.length > 0) {
+        ragContext = documents.slice(0, 5).join("\n\n");
+      }
     }
 
     const systemPrompt = `You are a friendly, human representative working at Petsfolio. Your goal is to convert leads, assist customers, provide support, and answer inquiries from potential service partners or job seekers. NEVER mention that you are an AI or a bot. Act completely human.
@@ -316,7 +345,7 @@ CRITICAL RULES:
 1. HUMAN TONE: Communicate EXACTLY like a real human. Be warm, empathetic, and casual (e.g., use "Hey", "Sure thing", "Got it"). DO NOT sound robotic, overly formal, or like an AI assistant.
 2. INITIATE & CONVERT (PACING): Actively initiate the conversation to convert the lead. If information is missing (service needed, pet type, breed, age, city), gently ask for it. CRITICAL: Ask AT MOST 1 or 2 questions per message to avoid overwhelming the user. Guide them step-by-step.
 3. STRICT KNOWLEDGE BASE ONLY: You MUST answer their questions ONLY using the information provided in the KNOWLEDGE BASE. Do NOT use outside knowledge. Answer anything related to our application based on the document.
-4. SHORT & BULLETED RESPONSES: All your replies MUST be short (maximum 75 words). You MUST format your responses using bullet points. Do NOT write large paragraphs.
+4. SHORT & BULLETED RESPONSES: All your replies MUST be short (maximum 50 words). You MUST format your responses using bullet points. Do NOT write large paragraphs.
 5. MISSING INFO / FALLBACK: If you DO NOT have the proper information in the KNOWLEDGE BASE to answer, politely inform the user. ONLY share the APP DOWNLOAD LINKS if the 'Total Conversation Turns' is 5 or more. Do NOT mention any sales representative names and do NOT tell them that someone will contact them. NEVER use your own knowledge to answer.
 6. CONTEXT AWARENESS: Always use the LEAD CONTEXT and HISTORY to understand what the user is asking.
 7. GUIDANCE: Direct the user to download and use the Petsfolio Client Application to book their service ONLY IF the 'Total Conversation Turns' is 5 or more. Do NOT share the app links in early messages.
