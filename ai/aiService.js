@@ -99,7 +99,7 @@ const qualificationSchema = z.object({
         .string()
         .default("")
         .describe(
-          "Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance). Return empty string if not mentioned in the current input.",
+          "Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance, Job Inquiry, Cow Services). Return empty string if not mentioned in the current input.",
         ),
       specialRequirements: z
         .string()
@@ -353,7 +353,7 @@ CRITICAL RULES:
 9. MEDIA ATTACHMENTS: If the user sends an image/video/attachment, respond with: "I noticed you sent media! I can only read text messages right now. Could you please describe your query in text?"
 10. COMPLETION & HUMAN HANDOFF: If the user explicitly asks for a human, says 'yes' to support, or if the question is completely off-topic (NOTE: inquiries about service providers, jobs, walkers, or cows are NOT off-topic), politely inform them that you are transferring them to human support and set disableAI=true. Do NOT mention any sales representative names and do NOT say that someone will contact them.
 11. WHATSAPP FORMATTING (CRITICAL): Your response MUST be formatted for WhatsApp. Use short, punchy sentences, bullet points, double line breaks, and emojis.
-12. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP. If the enquiry is related to a service provider, job, or cow, do NOT ask for or collect any pet details.
+12. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP. If the enquiry is related to a service provider, job, or cow, do NOT ask for or collect any pet details. Instead, just ask for their City and exact requirement.
 13. OUTPUT: Respond purely via the structured JSON schema.`;
 
     let parsed = null;
@@ -432,6 +432,8 @@ CRITICAL RULES:
         "Walking",
         "Pet Sitting",
         "Pet Insurance",
+        "Job Inquiry",
+        "Cow Services",
         "General Enquiry",
       ];
       const rawIntent = aiData.intent || "";
@@ -447,6 +449,18 @@ CRITICAL RULES:
         else if (combinedText.includes("sit")) matchedService = "Pet Sitting";
         else if (combinedText.includes("insur"))
           matchedService = "Pet Insurance";
+        else if (
+          combinedText.includes("job") ||
+          combinedText.includes("work") ||
+          combinedText.includes("provider") ||
+          combinedText.includes("partner")
+        )
+          matchedService = "Job Inquiry";
+        else if (
+          combinedText.includes("cow") ||
+          combinedText.includes("cattle")
+        )
+          matchedService = "Cow Services";
       }
 
       if (matchedService) {

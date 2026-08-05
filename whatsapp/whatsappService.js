@@ -140,12 +140,18 @@ export const connectWhatsApp = async (sessionId) => {
       if (connection === "close") {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         console.log(`WhatsApp connection closed. Status code: ${statusCode}`);
+        
+        // Critical Fix: Update status to disconnected so the reconnect attempt doesn't abort
+        updateSessionStatus(sessionId, "disconnected");
 
         const shouldReconnect =
-          statusCode !== 401 && statusCode !== 403 && statusCode !== 405;
+          statusCode !== DisconnectReason.loggedOut && 
+          statusCode !== 403 && 
+          statusCode !== 405;
+          
         if (shouldReconnect) {
-          console.log("Attempting to reconnect WhatsApp...");
-          setTimeout(() => connectWhatsApp(sessionId), 3000);
+          console.log("Attempting to reconnect WhatsApp in 5 seconds...");
+          setTimeout(() => connectWhatsApp(sessionId), 5000);
         } else {
           console.log(
             "WhatsApp session logged out. Cleaning up credentials...",
@@ -558,10 +564,10 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
     );
 
     // 6. Asynchronously trigger AI agent response with 4-second debounce
-    // if (!isFromMe && lead.aiEnabled) {
-    //   console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
-    //   triggerAIDebounced(lead, remoteJid, textContent, sessionId);
-    // }
+    if (!isFromMe && lead.aiEnabled) {
+      console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
+      triggerAIDebounced(lead, remoteJid, textContent, sessionId);
+    }
   } catch (error) {
     console.error(
       "Error processing incoming/outgoing WhatsApp message:",
