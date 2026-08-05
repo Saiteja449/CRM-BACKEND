@@ -35,10 +35,14 @@ if (!fs.existsSync(logsDir)) {
 }
 
 const logWhatsAppEvent = (message) => {
-  const timestamp = new Date().toISOString();
+  const now = new Date();
+  const dateStr = now.toISOString().split("T")[0]; // Returns YYYY-MM-DD
+  const timestamp = now.toISOString();
   const logMessage = `[${timestamp}] ${message}\n`;
-  fs.appendFile(path.join(logsDir, "whatsapp.log"), logMessage, (err) => {
-    if (err) console.error("Failed to write to whatsapp.log:", err);
+  const logFileName = `whatsapp-${dateStr}.log`;
+  
+  fs.appendFile(path.join(logsDir, logFileName), logMessage, (err) => {
+    if (err) console.error(`Failed to write to ${logFileName}:`, err);
   });
 };
 
