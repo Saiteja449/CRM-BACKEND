@@ -4,6 +4,7 @@ import {
 } from "@langchain/google-genai";
 import { ChatOpenAI } from "@langchain/openai";
 import { QdrantVectorStore } from "@langchain/qdrant";
+import { VoyageAIClient } from "voyageai";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { z } from "zod";
 import path from "path";
@@ -98,7 +99,7 @@ const qualificationSchema = z.object({
         .string()
         .default("")
         .describe(
-          "Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance). Return empty string if not mentioned in the current input.",
+          "Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance, Job Inquiry, Cow Services). Return empty string if not mentioned in the current input.",
         ),
       specialRequirements: z
         .string()
@@ -226,19 +227,15 @@ export const generateAIResponse = async (leadId, incomingText) => {
       }
     }
 
-    // RAG Context Retrieval from Qdrant
-    const vs = await initVectorStore();
-    let ragContext = "";
-    if (vs) {
-      const userIntent = lead.aiQualification?.intent || lead.service || "";
-      const searchQuery = userIntent
-        ? `${userIntent} ${incomingText.trim()}`
-        : incomingText.trim();
-      const results = await vs.similaritySearch(searchQuery, 8);
-      ragContext = results.map((r) => r.pageContent).join("\n\n");
-    }
+    const modelGeminiPrimary = new ChatGoogleGenerativeAI({
+      model: "gemini-3.1-flash-lite",
+      temperature: 0,
+      maxOutputTokens: 1500,
+      apiKey: process.env.GEMINI_API_KEY,
+    });
 
     // History
+    const totalMessagesCount = await Message.countDocuments({ leadId });
     const historyDocs = await Message.find({ leadId })
       .sort({ timestamp: -1 })
       .limit(8);
@@ -258,7 +255,69 @@ export const generateAIResponse = async (leadId, incomingText) => {
       ? lastAgentMessage.text
       : "(none — this is the first message to this lead)";
 
-    const systemPrompt = `You are Petsfolio's AI assistant.
+    // LLM Query Rewriting for Better RAG
+    let optimizedSearchQuery = incomingText.trim();
+    if (chatHistoryLog && incomingText.split(" ").length < 6) {
+      try {
+        const rewritePrompt = `Given the following conversation history and the latest user message, rewrite the latest message into a standalone, detailed search query that can be used to search a vector database. Only return the search query and nothing else. Do not answer the question.
+History:
+${chatHistoryLog}
+Latest Message: ${incomingText}`;
+        const rewriteRes = await modelGeminiPrimary.invoke([
+          ["user", rewritePrompt],
+        ]);
+        if (rewriteRes && rewriteRes.content) {
+          optimizedSearchQuery = rewriteRes.content.trim();
+        }
+      } catch (err) {
+        console.warn(
+          "Query rewrite failed, falling back to original text.",
+          err.message,
+        );
+      }
+    }
+
+    // RAG Context Retrieval from Qdrant
+    const vs = await initVectorStore();
+    let ragContext = "";
+    if (vs) {
+      const userIntent = lead.aiQualification?.intent || lead.service || "";
+      const finalSearchQuery = userIntent
+        ? `${userIntent} ${optimizedSearchQuery}`
+        : optimizedSearchQuery;
+
+      const results = await vs.similaritySearch(finalSearchQuery, 15);
+      const documents = results.map((r) => r.pageContent);
+
+      if (documents.length > 0 && process.env.VOYAGE_API_KEY) {
+        try {
+          const voyageClient = new VoyageAIClient({
+            apiKey: process.env.VOYAGE_API_KEY,
+          });
+          const rerankRes = await voyageClient.rerank({
+            query: finalSearchQuery,
+            documents: documents,
+            model: "rerank-2.5",
+            topK: 5,
+          });
+          console.log("rerankRes.data", rerankRes.data);
+          if (rerankRes.data) {
+            ragContext = rerankRes.data
+              .map((item) => item.document || documents[item.index])
+              .join("\n\n");
+          } else {
+            ragContext = documents.slice(0, 5).join("\n\n");
+          }
+        } catch (rerankError) {
+          console.warn("Voyage reranking failed:", rerankError.message);
+          ragContext = documents.slice(0, 5).join("\n\n");
+        }
+      } else if (documents.length > 0) {
+        ragContext = documents.slice(0, 5).join("\n\n");
+      }
+    }
+
+    const systemPrompt = `You are a friendly, human representative working at Petsfolio. Your goal is to convert leads, assist customers, provide support, and answer inquiries from potential service partners or job seekers. NEVER mention that you are an AI or a bot. Act completely human.
 
 KNOWLEDGE BASE:
 ${ragContext || "(No relevant information found in Knowledge Base)"}
@@ -269,6 +328,7 @@ APP DOWNLOAD LINKS:
 
 LEAD CONTEXT:
 Name: ${lead.name} | Phone: ${lead.phone} | Rep: ${assignedRep}
+Total Conversation Turns: ${totalMessagesCount}
 Already Collected:
 - Lead Service Interest: ${lead.service || "Missing"}
 - AI Extracted Intent: ${lead.aiQualification?.intent || "Missing"}
@@ -282,157 +342,36 @@ LAST AGENT MSG: "${lastAgentMessageText}"
 USER MSG: "${incomingText}"
 
 CRITICAL RULES:
-1. TONE & GREETING: Act as a friendly, helpful assistant. If this is the first message (HISTORY is (None)), warmly welcome the user to Petsfolio and greet them before assisting.
-2. CONTEXT AWARENESS: Always use the LEAD CONTEXT and HISTORY to understand what the user is asking about.
-3. PET BOARDING: If the user asks for 'Pet Boarding', politely explain that we currently do not offer Pet Boarding, but we offer 'Pet Sitting', which is a similar home-based service. Share the APP DOWNLOAD LINKS for them to book it.
-4. MISSING INFO / FALLBACK: You MUST ONLY use the information provided in the KNOWLEDGE BASE. Do NOT invent or assume any information. If you DO NOT have the proper information in the KNOWLEDGE BASE to answer the user's question, politely inform the user, tell them to download the Petsfolio Client Application (include the APP DOWNLOAD LINKS provided above), and let them know that ${assignedRep} from our team will contact them shortly.
-5. MEDIA ATTACHMENTS: If the user sends an image, video, or attachment (indicated by USER MSG containing '[Image/Video attachment disabled]', '[Media with caption]', etc.), you MUST respond with: "I noticed you sent an image/video! I can only read text messages right now. Could you please describe your query in text, or let me know if you'd like to speak with a team member?"
-6. GUIDANCE: After providing the requested information, direct the user to download and use the Petsfolio Client Application to book their service. Do NOT ask them if they are ready to book here or try to schedule it manually.
-7. NO FORCED QUALIFICATION: Do NOT ask the user for 'Pet Type', 'City', or any other missing data fields purely to collect data. Your goal is simply to assist them with their inquiries.
-8. PASSIVE EXTRACTION: Even though you won't ask for it, if the user naturally mentions their 'Pet Type', 'City', 'Intent', etc., you MUST extract that info into the corresponding JSON fields so it can be saved.
-9. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP.
-10. SHARING LINKS: Whenever referring to the app or links, share the exact APP DOWNLOAD LINKS provided above.
-11. COMPLETION & HUMAN HANDOFF: If the user explicitly asks to speak with a human, says 'yes' or requests support when offered, or if you cannot answer their question, inform them that ${assignedRep} will contact them shortly and set disableAI=true.
-12. OUTPUT: Respond purely via the structured JSON schema.
-13. WHATSAPP FORMATTING (CRITICAL): Do NOT write long paragraphs. Your response MUST be formatted for WhatsApp. Use short, punchy sentences. Add double line breaks between distinct thoughts or steps. Use bullet points or numbered lists where appropriate. Include relevant emojis naturally. NEVER return a huge wall of text.
-14. OFF-TOPIC FILTER: Only respond to questions about Petsfolio, its services (Grooming, Training, Walking, Pet Sitting, Pet Insurance), or general pet care. If the user asks any off-topic or unrelated questions, politely decline and state that you can only assist with Petsfolio-related queries.
-15. FRUSTRATION & REPEATED QUESTIONS: If the user appears frustrated, expresses annoyance, or repeatedly asks a question that was not solved by previous messages, politely answer their question and ask: "Do you need a support team member to assist you?" If the user responds "yes" (or expresses intent to connect with support), you MUST set disableAI=true and inform them that ${assignedRep} from our support team will reach out to them shortly.
-16. ONLINE SERVICES: We do NOT offer any online services (including online dog training). All of our services are offered exclusively through our Petsfolio Client Application. If asked about online services, politely inform the user of this policy and provide the APP DOWNLOAD LINKS.
-17. CERTIFIED PROFESSIONALS: Do NOT mention or use phrases like 'certified trainers', 'certified groomers', 'certified walkers', or 'certified sitters' in your responses.`;
-
-    const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey) {
-      console.warn("GROQ_API_KEY is not defined in the environment variables.");
-      return "I'm currently unable to assist because the AI configuration is missing. Please contact support.";
-    }
-
-    const modelGroqPrimary = new ChatOpenAI({
-      modelName: "llama-3.3-70b-versatile",
-      temperature: 0,
-      maxTokens: 1500,
-      apiKey: groqApiKey,
-      configuration: { baseURL: "https://api.groq.com/openai/v1" },
-    });
-
-    const modelGeminiFallback = new ChatGoogleGenerativeAI({
-      model: "gemini-2.5-flash",
-      temperature: 0,
-      maxOutputTokens: 1500,
-      apiKey: process.env.GEMINI_API_KEY,
-    });
-
-    const modelOpenRouterFallback = new ChatOpenAI({
-      modelName: "openrouter/auto",
-      temperature: 0,
-      maxTokens: 1500,
-      apiKey: process.env.OPENROUTER_API_KEY,
-      configuration: { baseURL: "https://openrouter.ai/api/v1" },
-    });
-
-    const modelsToTry = [
-      {
-        name: "OpenRouter",
-        baseModel: modelOpenRouterFallback,
-        method: "jsonMode",
-      },
-      { name: "Groq", baseModel: modelGroqPrimary, method: "jsonMode" },
-      { name: "Gemini", baseModel: modelGeminiFallback },
-    ];
-
-    const jsonSchemaString = `
-YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RETURN MARKDOWN OR TEXT.
-{
-  "reply": "string (Your reply text to the user)",
-  "qualification": {
-    "petType": "string",
-    "breed": "string",
-    "petAge": "string",
-    "city": "string",
-    "intent": "string",
-    "specialRequirements": "string",
-    "urgency": "string (High, Medium, Low)",
-    "interestScore": "number (1-10)"
-  },
-  "tags": ["string"],
-  "disableAI": "boolean",
-  "summary": "string",
-  "sentiment": "string (Positive, Neutral, Negative)",
-  "probabilityOfConversion": "number (0-100)",
-  "nextAction": "string",
-  "triggerActions": {
-    "createFollowUp": "boolean",
-    "followUpNotes": "string",
-    "followUpDate": "string",
-    "addNote": "string"
-  }
-}`;
-
-    const extractJSON = (text) => {
-      try {
-        const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
-        if (match) return JSON.parse(match[1]);
-        const start = text.indexOf("{");
-        const end = text.lastIndexOf("}");
-        if (start !== -1 && end !== -1)
-          return JSON.parse(text.substring(start, end + 1));
-        return JSON.parse(text);
-      } catch (e) {
-        return null;
-      }
-    };
+1. HUMAN TONE: Communicate EXACTLY like a real human. Be warm, empathetic, and casual (e.g., use "Hey", "Sure thing", "Got it"). DO NOT sound robotic, overly formal, or like an AI assistant.
+2. INITIATE & CONVERT (PACING): Actively initiate the conversation to convert the lead. If information is missing (service needed, pet type, breed, age, city), gently ask for it. CRITICAL: Instead of asking one by one, you can ask for multiple missing fields (like pet details and city) at once. Ask at most 3 questions per message to gather data efficiently without overwhelming the user. If this is the first interaction (Total Conversation Turns is 1 or 0) and the user has not mentioned a specific service, you MUST provide a bulleted list of all our available services (Training, Grooming, Walking, Pet Sitting, Pet Insurance) for them to choose from.
+3. STRICT KNOWLEDGE BASE ONLY: You MUST answer their questions ONLY using the information provided in the KNOWLEDGE BASE. Do NOT use outside knowledge. Answer anything related to our application based on the document.
+4. SHORT & BULLETED RESPONSES: All your replies MUST be short (maximum 50 words). You MUST format your responses using bullet points. Do NOT write large paragraphs.
+5. MISSING INFO / FALLBACK: If you DO NOT have the proper information in the KNOWLEDGE BASE to answer, politely inform the user. ONLY share the APP DOWNLOAD LINKS if the 'Total Conversation Turns' is 5 or more. Do NOT mention any sales representative names and do NOT tell them that someone will contact them. NEVER use your own knowledge to answer.
+6. CONTEXT AWARENESS: Always use the LEAD CONTEXT and HISTORY to understand what the user is asking.
+7. GUIDANCE: Direct the user to download and use the Petsfolio Client Application to book their service ONLY IF the 'Total Conversation Turns' is 5 or more. Do NOT share the app links in early messages.
+8. PASSIVE EXTRACTION: Always extract 'Pet Type', 'Breed', 'Age', 'City', and 'Intent' into the corresponding JSON fields if mentioned.
+9. MEDIA ATTACHMENTS: If the user sends an image/video/attachment, respond with: "I noticed you sent media! I can only read text messages right now. Could you please describe your query in text?"
+10. COMPLETION & HUMAN HANDOFF: If the user explicitly asks for a human, says 'yes' to support, or if the question is completely off-topic (NOTE: inquiries about service providers, jobs, walkers, or cows are NOT off-topic), politely inform them that you are transferring them to human support and set disableAI=true. Do NOT mention any sales representative names and do NOT say that someone will contact them.
+11. WHATSAPP FORMATTING (CRITICAL): Your response MUST be formatted for WhatsApp. Use short, punchy sentences, bullet points, double line breaks, and emojis.
+12. RESTRICTIONS: NEVER ask for Pet Name, Gender, Address, Dates/Times, Packages, Payment, Phone, Email, or OTP. If the enquiry is related to a service provider, job, or cow, do NOT ask for or collect any pet details. Instead, just ask for their City and exact requirement.
+13. OUTPUT: Respond purely via the structured JSON schema.`;
 
     let parsed = null;
     let lastError = null;
 
-    console.log("Generating AI response with fallback strategy...");
+    console.log("Generating AI response with Gemini...");
 
-    for (let i = 0; i < modelsToTry.length; i++) {
-      const currentModel = modelsToTry[i];
-      try {
-        console.log(`Attempting model: ${currentModel.name}`);
-        const localSystemPrompt = systemPrompt + "\n\n" + jsonSchemaString;
-
-        try {
-          // Attempt 1: Native structured output
-          const structuredModel = currentModel.baseModel.withStructuredOutput(
-            qualificationSchema,
-            currentModel.method
-              ? { name: "generate_response", method: currentModel.method }
-              : undefined,
-          );
-          parsed = await structuredModel.invoke([
-            ["system", systemPrompt], // Uses standard prompt for native structured output
-            ["user", incomingText],
-          ]);
-        } catch (err) {
-          console.warn(
-            `Native structured output threw an error for ${currentModel.name}, trying manual JSON extraction...`,
-          );
-        }
-
-        if (!parsed) {
-          // Attempt 2: Manual extraction
-          const rawResponse = await currentModel.baseModel.invoke([
-            ["system", localSystemPrompt],
-            ["user", incomingText],
-          ]);
-          parsed = extractJSON(rawResponse.content);
-        }
-
-        if (!parsed) {
-          throw new Error(
-            "Model failed to produce valid JSON via native calling AND manual extraction.",
-          );
-        }
-
-        console.log(`Success with model: ${currentModel.name}`);
-        break;
-      } catch (e) {
-        lastError = e;
-        console.warn(
-          `Model ${currentModel.name} fallback index ${i} failed. Error message: ${e.message}`,
-        );
-      }
+    try {
+      const structuredModel =
+        modelGeminiPrimary.withStructuredOutput(qualificationSchema);
+      parsed = await structuredModel.invoke([
+        ["system", systemPrompt],
+        ["user", incomingText],
+      ]);
+      console.log("Success with model: Gemini");
+    } catch (e) {
+      lastError = e;
+      console.warn("Model Gemini failed. Error message:", e.message);
     }
 
     if (!parsed) {
@@ -493,6 +432,8 @@ YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RE
         "Walking",
         "Pet Sitting",
         "Pet Insurance",
+        "Job Inquiry",
+        "Cow Services",
         "General Enquiry",
       ];
       const rawIntent = aiData.intent || "";
@@ -508,6 +449,18 @@ YOU MUST RETURN ONLY A VALID JSON OBJECT MATCHING EXACTLY THIS SCHEMA. DO NOT RE
         else if (combinedText.includes("sit")) matchedService = "Pet Sitting";
         else if (combinedText.includes("insur"))
           matchedService = "Pet Insurance";
+        else if (
+          combinedText.includes("job") ||
+          combinedText.includes("work") ||
+          combinedText.includes("provider") ||
+          combinedText.includes("partner")
+        )
+          matchedService = "Job Inquiry";
+        else if (
+          combinedText.includes("cow") ||
+          combinedText.includes("cattle")
+        )
+          matchedService = "Cow Services";
       }
 
       if (matchedService) {

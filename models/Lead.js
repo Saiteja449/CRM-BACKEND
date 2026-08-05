@@ -33,6 +33,8 @@ const leadSchema = new mongoose.Schema(
         "Walking",
         "Pet Sitting",
         "Pet Insurance",
+        "Job Inquiry",
+        "Cow Services",
         "General Enquiry",
       ],
       required: true,
