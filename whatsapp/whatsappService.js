@@ -112,6 +112,9 @@ export const connectWhatsApp = async (sessionId) => {
       version,
       printQRInTerminal: true,
       logger: pino({ level: "silent" }),
+      keepAliveIntervalMs: 20000,
+      markOnlineOnConnect: true,
+      connectTimeoutMs: 60000,
     });
 
     if (!sessions[sessionId]) sessions[sessionId] = {};
