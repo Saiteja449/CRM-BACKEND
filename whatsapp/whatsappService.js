@@ -25,9 +25,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadDir = path.join(__dirname, "..", "uploads");
 
+const logsDir = path.join(__dirname, "..", "logs");
+
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
+
+const logWhatsAppEvent = (message) => {
+  const timestamp = new Date().toISOString();
+  const logMessage = `[${timestamp}] ${message}\n`;
+  fs.appendFile(path.join(logsDir, "whatsapp.log"), logMessage, (err) => {
+    if (err) console.error("Failed to write to whatsapp.log:", err);
+  });
+};
 
 const sessions = {}; // map of sessionId -> { sock, status, qrCode, connectedPhone, connectedName }
 export const normalizePhone = (jid) => {
@@ -45,6 +58,12 @@ const updateSessionStatus = async (
   if (!sessions[sessionId]) {
     sessions[sessionId] = { status: "disconnected" };
   }
+  
+  // Log the status change
+  if (sessions[sessionId].status !== status) {
+    logWhatsAppEvent(`Session: ${sessionId} | Status changed from '${sessions[sessionId].status}' to '${status}' | Phone: ${phone || "N/A"}`);
+  }
+
   sessions[sessionId].status = status;
   sessions[sessionId].qrCode = qr;
   if (phone) sessions[sessionId].connectedPhone = phone;
@@ -139,7 +158,9 @@ export const connectWhatsApp = async (sessionId) => {
 
       if (connection === "close") {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const errMsg = lastDisconnect?.error?.message || "Unknown error";
         console.log(`WhatsApp connection closed. Status code: ${statusCode}`);
+        logWhatsAppEvent(`Session: ${sessionId} | CONNECTION DROPPED | Status: ${statusCode} | Reason: ${errMsg}`);
         
         // Critical Fix: Update status to disconnected so the reconnect attempt doesn't abort
         updateSessionStatus(sessionId, "disconnected");
