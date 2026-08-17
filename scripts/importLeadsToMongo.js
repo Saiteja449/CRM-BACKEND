@@ -73,6 +73,7 @@ async function importLeads() {
         if (existingLead) {
           duplicateCount++;
         } else {
+          leadData.joinedAt = new Date();
           const newLead = new Lead(leadData);
           await newLead.save();
           insertedCount++;
