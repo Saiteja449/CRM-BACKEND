@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { syncToMinicow } from "../utils/minicowSync.js";
 
 const leadSchema = new mongoose.Schema(
   {
@@ -165,6 +166,10 @@ const leadSchema = new mongoose.Schema(
         uploadedAt: { type: Date, default: Date.now },
       },
     ],
+    syncedToMinicow: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true },
 );
@@ -201,6 +206,21 @@ leadSchema.set("toJSON", {
     ret.id = ret._id.toString();
     delete ret._id;
   },
+});
+
+// Minicow Sync Hooks
+leadSchema.post("save", function (doc) {
+  if (doc.services && doc.services.includes("Cow Services") && !doc.syncedToMinicow) {
+    syncToMinicow(doc);
+  }
+});
+
+leadSchema.post("findOneAndUpdate", async function (doc) {
+  // Fetch the latest document from DB to guarantee we check the updated state
+  const updatedDoc = await this.model.findOne(this.getQuery());
+  if (updatedDoc && updatedDoc.services && updatedDoc.services.includes("Cow Services") && !updatedDoc.syncedToMinicow) {
+    syncToMinicow(updatedDoc);
+  }
 });
 
 const Lead = mongoose.model("Lead", leadSchema);
