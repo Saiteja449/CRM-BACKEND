@@ -350,6 +350,13 @@ export const updateLead = async (req, res) => {
         .json({ success: false, message: "Lead not found" });
     }
 
+    // Automatically set nextFollowUp to tomorrow if status is changed to 'Not Attended'
+    if (updateData.status === "Not Attended" && !updateData.nextFollowUp) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      updateData.nextFollowUp = tomorrow.toISOString().split("T")[0];
+    }
+
     if (req.file) {
       const host = req.get("host");
       const basePath = host.includes("holyminicow.com") ? "/crm-beta/uploads/" : "/uploads/";
