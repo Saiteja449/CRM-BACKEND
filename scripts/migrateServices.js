@@ -10,19 +10,20 @@ const migrate = async () => {
     await connectDB();
     console.log("Connected to DB, starting migration...");
 
-    // Find leads where service is a string and services is missing or empty
-    const leads = await Lead.find({ service: { $exists: true, $ne: null } });
+    // Find leads where service is a string and services is missing in the DB
+    const leads = await Lead.find({ 
+      service: { $exists: true, $ne: null },
+      services: { $exists: false }
+    });
 
-    console.log(`Found ${leads.length} leads with 'service' field.`);
+    console.log(`Found ${leads.length} leads to migrate.`);
 
     let migratedCount = 0;
     for (const lead of leads) {
-      if (!lead.services || lead.services.length === 0) {
-        if (lead.service) {
-          lead.services = [lead.service];
-          await lead.save();
-          migratedCount++;
-        }
+      if (lead.service) {
+        lead.services = [lead.service];
+        await lead.save();
+        migratedCount++;
       }
     }
 
