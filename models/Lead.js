@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import { syncToMinicow } from "../utils/minicowSync.js";
+import { syncToJobs } from "../utils/jobsSync.js";
 
 const leadSchema = new mongoose.Schema(
   {
@@ -170,6 +171,10 @@ const leadSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    syncedToJobs: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true },
 );
@@ -220,6 +225,20 @@ leadSchema.post("findOneAndUpdate", async function (doc) {
   const updatedDoc = await this.model.findOne(this.getQuery());
   if (updatedDoc && updatedDoc.services && updatedDoc.services.includes("Cow Services") && !updatedDoc.syncedToMinicow) {
     syncToMinicow(updatedDoc);
+  }
+});
+
+// Jobs Sync Hooks
+leadSchema.post("save", function (doc) {
+  if (doc.services && doc.services.includes("Job Inquiry") && !doc.syncedToJobs) {
+    syncToJobs(doc);
+  }
+});
+
+leadSchema.post("findOneAndUpdate", async function (doc) {
+  const updatedDoc = await this.model.findOne(this.getQuery());
+  if (updatedDoc && updatedDoc.services && updatedDoc.services.includes("Job Inquiry") && !updatedDoc.syncedToJobs) {
+    syncToJobs(updatedDoc);
   }
 });
 
