@@ -464,7 +464,9 @@ CRITICAL RULES:
       }
 
       if (matchedService) {
-        updatePayload.services = [matchedService];
+        if (!lead.services || !lead.services.includes(matchedService)) {
+          updatePayload.services = [...(lead.services || []), matchedService];
+        }
       }
 
       const resolvedCity = aiData.city || prevQual.city;
