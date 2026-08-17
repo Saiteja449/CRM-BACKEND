@@ -27,7 +27,7 @@ function cleanPhoneNumber(phone) {
 }
 
 async function importLeads() {
-  const mongoURI = process.env.MONGODB_URI_BETA;
+  const mongoURI = process.env.MONGODB_URI;
   if (!mongoURI) {
     console.error("MONGODB_URI is not defined in .env");
     process.exit(1);
