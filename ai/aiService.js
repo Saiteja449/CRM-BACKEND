@@ -281,7 +281,7 @@ Latest Message: ${incomingText}`;
     const vs = await initVectorStore();
     let ragContext = "";
     if (vs) {
-      const userIntent = lead.aiQualification?.intent || lead.service || "";
+      const userIntent = lead.aiQualification?.intent || (lead.services && lead.services.join(", ")) || "";
       const finalSearchQuery = userIntent
         ? `${userIntent} ${optimizedSearchQuery}`
         : optimizedSearchQuery;
@@ -330,7 +330,7 @@ LEAD CONTEXT:
 Name: ${lead.name} | Phone: ${lead.phone} | Rep: ${assignedRep}
 Total Conversation Turns: ${totalMessagesCount}
 Already Collected:
-- Lead Service Interest: ${lead.service || "Missing"}
+- Lead Service Interest: ${(lead.services && lead.services.join(", ")) || "Missing"}
 - AI Extracted Intent: ${lead.aiQualification?.intent || "Missing"}
 - City: ${lead.aiQualification?.city || "Missing"}
 - Pet Type: ${lead.aiQualification?.petType || "Missing"}
@@ -464,7 +464,7 @@ CRITICAL RULES:
       }
 
       if (matchedService) {
-        updatePayload.service = matchedService;
+        updatePayload.services = [matchedService];
       }
 
       const resolvedCity = aiData.city || prevQual.city;

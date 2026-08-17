@@ -46,7 +46,7 @@ export const runFollowupCheck = async () => {
           // Determine service content
           let serviceObj = null;
           const requestedService =
-            lead.service ||
+            (lead.services && lead.services.length > 0 ? lead.services[0] : null) ||
             (lead.aiQualification && lead.aiQualification.intent);
 
           if (

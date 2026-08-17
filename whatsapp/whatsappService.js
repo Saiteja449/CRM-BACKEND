@@ -441,7 +441,7 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
         name: pushName,
         phone: phone,
         source: "WhatsApp",
-        service: detectedService || "General Enquiry", // Satisfies MongoDB required field
+        services: [detectedService || "General Enquiry"],
         status: "New",
         joinedAt: new Date(),
         notes: fromMe
@@ -496,11 +496,11 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
         lastActivity: timestamp,
       };
 
-      if (detectedService && lead.service !== detectedService) {
-        updatedFields.service = detectedService;
-        lead.service = detectedService; // Sync memory instance
+      if (detectedService && (!lead.services || !lead.services.includes(detectedService))) {
+        updatedFields.services = [...(lead.services || []), detectedService];
+        lead.services = updatedFields.services; // Sync memory instance
         console.log(
-          `[DEBUG] Updating lead service to '${detectedService}' based on message content`,
+          `[DEBUG] Added lead service '${detectedService}' based on message content`,
         );
       }
 

@@ -85,7 +85,7 @@ export const getPaginatedLeads = async (req, res) => {
       ];
     }
 
-    if (service !== "All") query.service = service;
+    if (service !== "All") query.services = service;
     if (salesperson !== "All") query.assignedTo = salesperson;
     if (status !== "All") query.status = status;
 
@@ -153,7 +153,7 @@ export const getPaginatedLeads = async (req, res) => {
         { email: searchRegex },
       ];
     }
-    if (service !== "All") baseCountQuery.service = service;
+    if (service !== "All") baseCountQuery.services = service;
     if (salesperson !== "All") baseCountQuery.assignedTo = salesperson;
     if (status !== "All") baseCountQuery.status = status;
 
@@ -257,6 +257,11 @@ export const createLead = async (req, res) => {
   try {
     const leadData = req.body || {};
 
+    // Backward compatibility for service -> services
+    if (leadData.service && (!leadData.services || leadData.services.length === 0)) {
+      leadData.services = [leadData.service];
+    }
+
     if (leadData.phone) {
       const existingLead = await Lead.findOne({ phone: leadData.phone });
       if (existingLead) {
@@ -326,6 +331,12 @@ export const updateLead = async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body || {};
+    
+    // Backward compatibility for service -> services
+    if (updateData.service && (!updateData.services || updateData.services.length === 0)) {
+      updateData.services = [updateData.service];
+    }
+
     console.log("updateData update Lead");
     console.log(updateData);
     console.log("updated");

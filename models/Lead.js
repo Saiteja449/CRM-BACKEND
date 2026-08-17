@@ -27,6 +27,10 @@ const leadSchema = new mongoose.Schema(
     },
     service: {
       type: String,
+      // deprecated
+    },
+    services: {
+      type: [String],
       enum: [
         "Grooming",
         "Training",
@@ -37,8 +41,7 @@ const leadSchema = new mongoose.Schema(
         "Cow Services",
         "General Enquiry",
       ],
-      required: true,
-      default: "Grooming",
+      default: ["Grooming"],
     },
 
     assignedTo: {

@@ -44,7 +44,7 @@ export const receiveWebsiteLead = async (req, res) => {
       phone: mobile,
       email: email,
       city: location,
-      service: mapService(service),
+      services: [mapService(service)],
       notes: message || "No message provided",
       source: "Website Form",
       status: "New",
