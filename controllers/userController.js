@@ -21,7 +21,7 @@ export const getUsers = async (req, res) => {
 // @route   POST /api/users
 // @access  Public (for now)
 export const addSalesPerson = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, specialization } = req.body;
 
   if (!name || !email || !password) {
     return res
@@ -46,6 +46,7 @@ export const addSalesPerson = async (req, res) => {
       email,
       password: hashedPassword,
       role: "sales person", // Will be mapped to 'Sales Representative' in frontend
+      specialization: specialization || "General Services",
     });
 
     await Notification.create({

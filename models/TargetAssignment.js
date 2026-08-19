@@ -4,6 +4,9 @@ const tierValuesSchema = new mongoose.Schema(
   {
     callsPerDay:   { type: Number, default: 0 },
     conversionPct: { type: Number, default: 0 },
+    expectedConversionPct: { type: Number, default: 0 },
+    monthlyClosings: { type: Number, default: 0 },
+    expectedClosures: { type: Number, default: 0 },
   },
   { _id: false }
 );

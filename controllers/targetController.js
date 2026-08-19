@@ -23,7 +23,7 @@ export const getTemplates = async (req, res) => {
  */
 export const createTemplate = async (req, res) => {
   try {
-    const { categoryName, type, description, tiers } = req.body;
+    const { categoryName, type, serviceCategory, description, tiers } = req.body;
 
     if (!categoryName) {
       return res
@@ -34,6 +34,7 @@ export const createTemplate = async (req, res) => {
     const template = await TargetTemplate.create({
       categoryName,
       type,
+      serviceCategory,
       description,
       tiers,
     });
@@ -50,11 +51,11 @@ export const createTemplate = async (req, res) => {
  */
 export const updateTemplate = async (req, res) => {
   try {
-    const { categoryName, type, description, tiers } = req.body;
+    const { categoryName, type, serviceCategory, description, tiers } = req.body;
 
     const template = await TargetTemplate.findByIdAndUpdate(
       req.params.id,
-      { categoryName, type, description, tiers },
+      { categoryName, type, serviceCategory, description, tiers },
       { new: true, runValidators: true }
     );
 
@@ -142,14 +143,23 @@ export const upsertAssignment = async (req, res) => {
       baseline: {
         callsPerDay:   Number(tiers?.baseline?.callsPerDay   || 0),
         conversionPct: Number(tiers?.baseline?.conversionPct || 0),
+        expectedConversionPct: Number(tiers?.baseline?.expectedConversionPct || 0),
+        monthlyClosings: Number(tiers?.baseline?.monthlyClosings || 0),
+        expectedClosures: Number(tiers?.baseline?.expectedClosures || 0),
       },
       target: {
         callsPerDay:   Number(tiers?.target?.callsPerDay   || 0),
         conversionPct: Number(tiers?.target?.conversionPct || 0),
+        expectedConversionPct: Number(tiers?.target?.expectedConversionPct || 0),
+        monthlyClosings: Number(tiers?.target?.monthlyClosings || 0),
+        expectedClosures: Number(tiers?.target?.expectedClosures || 0),
       },
       star: {
         callsPerDay:   Number(tiers?.star?.callsPerDay   || 0),
         conversionPct: Number(tiers?.star?.conversionPct || 0),
+        expectedConversionPct: Number(tiers?.star?.expectedConversionPct || 0),
+        monthlyClosings: Number(tiers?.star?.monthlyClosings || 0),
+        expectedClosures: Number(tiers?.star?.expectedClosures || 0),
       },
     };
 

@@ -4,6 +4,7 @@ const targetTemplateSchema = new mongoose.Schema(
   {
     categoryName: { type: String, required: true, trim: true },
     type:         { type: String, default: "Core Service", trim: true },
+    serviceCategory: { type: String, enum: ["Combined Core Services", "Pet Insurance", "All"], default: "Combined Core Services" },
     description:  { type: String, default: "" },
     // The 3 tiers (Baseline / Target / Star) are visual labels only — no numeric values stored here.
     // Numeric target (calls) is set per-employee in TargetAssignment.

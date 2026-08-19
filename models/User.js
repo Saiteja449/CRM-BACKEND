@@ -22,6 +22,11 @@ const userSchema = mongoose.Schema(
       enum: ["sales manager", "sales person"],
       default: "user",
     },
+    specialization: {
+      type: String,
+      enum: ["General Services", "Pet Insurance", "All Services"],
+      default: "General Services",
+    },
   },
   {
     timestamps: true,
