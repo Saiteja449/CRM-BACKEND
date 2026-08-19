@@ -91,6 +91,15 @@ const leadSchema = new mongoose.Schema(
     city: {
       type: String,
     },
+    petType: {
+      type: String,
+    },
+    petAge: {
+      type: String,
+    },
+    pincode: {
+      type: String,
+    },
     preferredContactMethod: {
       type: String,
       enum: ["Email", "SMS", "WhatsApp", "Phone", ""],

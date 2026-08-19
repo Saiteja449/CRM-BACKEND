@@ -4,7 +4,7 @@ import AssignmentState from "../models/AssignmentState.js";
 
 export const receiveWebsiteLead = async (req, res) => {
   try {
-    const { name, mobile, email, location, service, message } = req.body;
+    const { name, mobile, email, location, service, message, petType, petAge, petAgeYears, petAgeMonths, pincode } = req.body;
 
     const errors = [];
     if (!name || name.trim() === "") errors.push("Name is required");
@@ -51,6 +51,16 @@ export const receiveWebsiteLead = async (req, res) => {
       assignedTo: "Unassigned",
       joinedAt: new Date(),
     };
+
+    if (petType) leadData.petType = petType;
+    if (petAge) {
+      leadData.petAge = petAge;
+    } else if (petAgeYears || petAgeMonths) {
+      const years = petAgeYears ? `${petAgeYears} Years` : "";
+      const months = petAgeMonths ? `${petAgeMonths} Months` : "";
+      leadData.petAge = `${years} ${months}`.trim();
+    }
+    if (pincode) leadData.pincode = pincode;
 
     const reps = await User.find({ role: "sales person" }).sort({ _id: 1 });
     if (reps && reps.length > 0) {
