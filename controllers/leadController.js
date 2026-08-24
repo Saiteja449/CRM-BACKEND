@@ -63,8 +63,11 @@ export const getPaginatedLeads = async (req, res) => {
       currentUserName = "",
     } = req.query;
 
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
+    const pageNum = parseInt(page) || 0;
+    const limitNum =
+      limit === "All" || limit === "all" || parseInt(limit) === 0
+        ? 0
+        : parseInt(limit) || 10;
 
     let query = {};
 
@@ -132,10 +135,11 @@ export const getPaginatedLeads = async (req, res) => {
     applyTabFilter(query, leadTypeTab);
 
     const totalCount = await Lead.countDocuments(query);
-    const leads = await Lead.find(query)
-      .sort({ createdAt: -1 })
-      .skip(pageNum * limitNum)
-      .limit(limitNum);
+    let leadQuery = Lead.find(query).sort({ createdAt: -1 });
+    if (limitNum > 0) {
+      leadQuery = leadQuery.skip(pageNum * limitNum).limit(limitNum);
+    }
+    const leads = await leadQuery;
 
     const baseCountQuery = {};
     if (currentUserRole === "Sales Representative" && currentUserName) {
