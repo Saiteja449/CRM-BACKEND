@@ -25,16 +25,35 @@ export const analyzeAudioFile = async (filePath, mimeType) => {
     throw new Error("Missing GEMINI_API_KEY");
   }
 
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`Audio file not found at path: ${filePath}`);
+  // Resolve absolute file path
+  let targetPath = path.resolve(filePath);
+  if (!fs.existsSync(targetPath)) {
+    const cwdPath = path.join(process.cwd(), filePath);
+    if (fs.existsSync(cwdPath)) {
+      targetPath = cwdPath;
+    } else {
+      throw new Error(`Audio file not found at path: ${filePath}`);
+    }
+  }
+
+  // Resolve proper audio MIME type (Android / React Native often sends generic octet-stream)
+  let finalMimeType = mimeType;
+  if (!finalMimeType || finalMimeType === "application/octet-stream") {
+    const ext = path.extname(targetPath).toLowerCase();
+    if (ext === ".m4a") finalMimeType = "audio/m4a";
+    else if (ext === ".mp3") finalMimeType = "audio/mp3";
+    else if (ext === ".wav") finalMimeType = "audio/wav";
+    else if (ext === ".ogg" || ext === ".oga") finalMimeType = "audio/ogg";
+    else if (ext === ".aac") finalMimeType = "audio/aac";
+    else finalMimeType = "audio/mp4";
   }
 
   try {
-    console.log(`[AudioAnalysis] Uploading file to Gemini: ${filePath}`);
+    console.log(`[AudioAnalysis] Uploading file to Gemini: ${targetPath} (MIME: ${finalMimeType})`);
 
     // Upload the file to Gemini's File API
-    const uploadResponse = await fileManager.uploadFile(filePath, {
-      mimeType: mimeType || "audio/mp4",
+    const uploadResponse = await fileManager.uploadFile(targetPath, {
+      mimeType: finalMimeType,
       displayName: "Sales Call Recording",
     });
 
@@ -42,11 +61,22 @@ export const analyzeAudioFile = async (filePath, mimeType) => {
       `[AudioAnalysis] Upload complete. File URI: ${uploadResponse.file.uri}`,
     );
 
-    // Wait briefly to ensure file is processed by Gemini
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Wait until file is actively processed by Gemini
+    let file = await fileManager.getFile(uploadResponse.file.name);
+    let attempts = 0;
+    while (file.state === "PROCESSING" && attempts < 15) {
+      console.log(`[AudioAnalysis] File is processing, waiting 2s... (attempt ${attempts + 1})`);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      file = await fileManager.getFile(uploadResponse.file.name);
+      attempts++;
+    }
 
-    // Initialize the model
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    if (file.state === "FAILED") {
+      throw new Error("Gemini audio file processing failed in File API.");
+    }
+
+    // Initialize the model - gemini-1.5-flash is stable and fast for audio analysis
+    let model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
 
     // Generate the summary
     const prompt = `
@@ -77,21 +107,35 @@ Rules:
 `;
 
     console.log(`[AudioAnalysis] Requesting content generation from Gemini...`);
-    const result = await model.generateContent([
-      {
-        fileData: {
-          mimeType: uploadResponse.file.mimeType,
-          fileUri: uploadResponse.file.uri,
+    let result;
+    try {
+      result = await model.generateContent([
+        {
+          fileData: {
+            mimeType: uploadResponse.file.mimeType,
+            fileUri: uploadResponse.file.uri,
+          },
         },
-      },
-      { text: prompt },
-    ]);
+        { text: prompt },
+      ]);
+    } catch (genErr) {
+      console.warn(`[AudioAnalysis] gemini-3.5-flash failed, trying gemini-2.5-flash fallback...`, genErr.message);
+      const fallbackModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      result = await fallbackModel.generateContent([
+        {
+          fileData: {
+            mimeType: uploadResponse.file.mimeType,
+            fileUri: uploadResponse.file.uri,
+          },
+        },
+        { text: prompt },
+      ]);
+    }
 
     const analysis = result.response.text();
-    console.log(`[AudioAnalysis] Analysis complete for ${filePath}`);
+    console.log(`[AudioAnalysis] Analysis complete for ${targetPath}`);
 
-    // Optionally delete the file from Gemini storage to save space,
-    // or let it expire after 48 hours (default behavior).
+    // Cleanup file from Gemini storage
     try {
       await fileManager.deleteFile(uploadResponse.file.name);
       console.log(

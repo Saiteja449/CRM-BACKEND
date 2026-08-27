@@ -308,11 +308,19 @@ export const createLead = async (req, res) => {
       leadData.recordings = [{
         name: req.body.recordingName || req.file.originalname,
         url: fileUrl,
+        analysisStatus: "pending",
         uploadedAt: new Date(),
       }];
     }
 
     const lead = await Lead.create(leadData);
+
+    if (req.file) {
+      const newRecording = lead.recordings && lead.recordings[lead.recordings.length - 1];
+      if (newRecording) {
+        triggerAudioAnalysis(lead._id, newRecording._id, path.resolve(req.file.path), req.file.mimetype);
+      }
+    }
 
     const assignedUser = await User.findOne({ name: lead.assignedTo });
     const targetUsers = assignedUser ? [assignedUser._id] : [];
@@ -383,7 +391,7 @@ export const updateLead = async (req, res) => {
     if (req.file) {
       const newRecording = lead.recordings[lead.recordings.length - 1];
       if (newRecording) {
-        triggerAudioAnalysis(lead._id, newRecording._id, req.file.path, req.file.mimetype);
+        triggerAudioAnalysis(lead._id, newRecording._id, path.resolve(req.file.path), req.file.mimetype);
       }
     }
 
