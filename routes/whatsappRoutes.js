@@ -8,10 +8,11 @@ import {
   getMessages,
   sendMessage,
   toggleAI,
+  getGlobalAIStatus,
+  toggleGlobalAIChats,
   getKB,
   createKB,
   deleteKB,
-
 } from "../controllers/whatsappController.js";
 
 const router = express.Router();
@@ -30,6 +31,8 @@ router.post("/message/send", sendMessage);
 
 // AI Automation
 router.post("/ai/toggle", toggleAI);
+router.get("/ai/global-status", getGlobalAIStatus);
+router.post("/ai/global-toggle", toggleGlobalAIChats);
 
 // Knowledge Base Management
 router.route("/knowledge-base").get(getKB).post(createKB);

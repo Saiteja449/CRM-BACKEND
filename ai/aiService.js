@@ -173,6 +173,153 @@ const qualificationSchema = z.object({
     }),
 });
 
+// Define Lightweight Extraction Schema (No Reply Required)
+export const leadExtractionSchema = z.object({
+  qualification: z
+    .object({
+      petType: z
+        .string()
+        .default("")
+        .describe(
+          "Type of pet (e.g., Dog, Cat, Cow). Return empty string if not mentioned in the conversation.",
+        ),
+      breed: z
+        .string()
+        .default("")
+        .describe(
+          "Breed of the pet (e.g., Golden Retriever, Labrador, Persian). Return empty string if not mentioned in the conversation.",
+        ),
+      petAge: z
+        .string()
+        .default("")
+        .describe(
+          "Age of the pet (e.g., 2 years, 6 months). Return empty string if not mentioned in the conversation.",
+        ),
+      city: z
+        .string()
+        .default("")
+        .describe(
+          "City or locality of the user (e.g., Bangalore, Hyderabad, Whitefield). Return empty string if not mentioned.",
+        ),
+      intent: z
+        .string()
+        .default("")
+        .describe(
+          "Service user is interested in (Training, Grooming, Walking, Pet Sitting, Pet Insurance, Job Inquiry, Cow Services). Return empty string if not mentioned.",
+        ),
+      specialRequirements: z
+        .string()
+        .default("")
+        .describe(
+          "Health issues, allergies, behavioral notes, etc. 'None' if specified none, empty string if not mentioned.",
+        ),
+      urgency: z
+        .string()
+        .default("Medium")
+        .describe("High, Medium, or Low urgency based on context."),
+      interestScore: z
+        .number()
+        .default(5)
+        .describe("1 to 10 interest score based on engagement."),
+    })
+    .default({
+      petType: "",
+      breed: "",
+      petAge: "",
+      city: "",
+      intent: "",
+      specialRequirements: "",
+      urgency: "Medium",
+      interestScore: 5,
+    }),
+  tags: z
+    .array(z.string())
+    .default([])
+    .describe("Relevant tags (e.g., 'Hot Lead', 'Grooming Inquiry', 'Interested')."),
+  summary: z
+    .string()
+    .default("")
+    .describe("One sentence summary of the conversation and customer intent."),
+  sentiment: z
+    .string()
+    .default("Neutral")
+    .describe("Positive, Neutral, or Negative."),
+  probabilityOfConversion: z
+    .number()
+    .default(50)
+    .describe("0 to 100 estimated probability."),
+  nextAction: z
+    .string()
+    .default("")
+    .describe("Next step recommendation for the sales representative."),
+  triggerActions: z
+    .object({
+      createFollowUp: z
+        .boolean()
+        .default(false)
+        .describe("Set true if user requested a callback or follow-up contact."),
+      followUpNotes: z.string().default("").describe("Notes for the callback."),
+      followUpDate: z
+        .string()
+        .default("")
+        .describe("Date string for follow up if requested (e.g. YYYY-MM-DD)."),
+      addNote: z
+        .string()
+        .default("")
+        .describe("Any specific internal notes for the CRM lead record."),
+    })
+    .default({
+      createFollowUp: false,
+      followUpNotes: "",
+      followUpDate: "",
+      addNote: "",
+    }),
+});
+
+/**
+ * Auto-assign representative if currently Unassigned or not set
+ */
+const autoAssignRepresentative = async (lead) => {
+  let assignedRep = lead.assignedTo;
+  if (!assignedRep || assignedRep === "Unassigned") {
+    const representatives = await User.find({ role: "sales person" }).sort({
+      _id: 1,
+    });
+    if (representatives && representatives.length > 0) {
+      let state = await AssignmentState.findOne({ key: "leadAssignment" });
+      if (!state) {
+        state = await AssignmentState.create({
+          key: "leadAssignment",
+          lastAssignedIndex: -1,
+        });
+      }
+      let nextIndex = state.lastAssignedIndex + 1;
+      if (nextIndex >= representatives.length) nextIndex = 0;
+
+      assignedRep = representatives[nextIndex].name;
+      state.lastAssignedIndex = nextIndex;
+      await state.save();
+
+      lead.assignedTo = assignedRep;
+      await lead.save();
+
+      // Create Lead Notification
+      const assignedAgent = await User.findOne({ name: assignedRep });
+      const targetUsers = assignedAgent ? [assignedAgent._id] : [];
+      await Notification.create({
+        title: "Lead Assigned by AI",
+        message: `Lead ${lead.name} has been assigned to ${assignedRep}.`,
+        type: "lead_update",
+        targetRoles: ["sales manager"],
+        targetUsers: targetUsers,
+      });
+    } else {
+      assignedRep = "Our team";
+    }
+  }
+  return assignedRep;
+};
+
 export const generateAIResponse = async (leadId, incomingText) => {
   try {
     const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -189,43 +336,7 @@ export const generateAIResponse = async (leadId, incomingText) => {
     }
 
     // Auto-assign representative if currently Unassigned or not set
-    let assignedRep = lead.assignedTo;
-    if (!assignedRep || assignedRep === "Unassigned") {
-      const representatives = await User.find({ role: "sales person" }).sort({
-        _id: 1,
-      });
-      if (representatives && representatives.length > 0) {
-        let state = await AssignmentState.findOne({ key: "leadAssignment" });
-        if (!state) {
-          state = await AssignmentState.create({
-            key: "leadAssignment",
-            lastAssignedIndex: -1,
-          });
-        }
-        let nextIndex = state.lastAssignedIndex + 1;
-        if (nextIndex >= representatives.length) nextIndex = 0;
-
-        assignedRep = representatives[nextIndex].name;
-        state.lastAssignedIndex = nextIndex;
-        await state.save();
-
-        lead.assignedTo = assignedRep;
-        await lead.save();
-
-        // Create Lead Notification
-        const assignedAgent = await User.findOne({ name: assignedRep });
-        const targetUsers = assignedAgent ? [assignedAgent._id] : [];
-        await Notification.create({
-          title: "Lead Assigned by AI",
-          message: `Lead ${lead.name} has been assigned to ${assignedRep}.`,
-          type: "lead_update",
-          targetRoles: ["sales manager"],
-          targetUsers: targetUsers,
-        });
-      } else {
-        assignedRep = "Our team";
-      }
-    }
+    const assignedRep = await autoAssignRepresentative(lead);
 
     const modelGeminiPrimary = new ChatGoogleGenerativeAI({
       model: "gemini-3.1-flash-lite",
@@ -398,148 +509,13 @@ CRITICAL RULES:
       };
     }
 
-    await AILog.create({
-      leadId,
-      prompt: systemPrompt + "\n\nUser Message: " + incomingText,
-      response: JSON.stringify(parsed, null, 2),
-      model: "openrouter/auto (OpenRouter + Qdrant)",
-      tokensUsed: 0,
-    });
-
-    const updatePayload = {};
-
-    if (parsed.qualification) {
-      const aiData = parsed.qualification || {};
-      const prevQual = lead.aiQualification || {};
-
-      updatePayload.lastMessage = incomingText;
-      updatePayload.lastActivity = new Date();
-      updatePayload.aiQualification = {
-        petType: aiData.petType || prevQual.petType || "",
-        breed: aiData.breed || prevQual.breed || "",
-        petAge: aiData.petAge || prevQual.petAge || "",
-        city: aiData.city || prevQual.city || "",
-        intent: aiData.intent || prevQual.intent || "",
-        specialRequirements:
-          aiData.specialRequirements || prevQual.specialRequirements || "",
-        urgency: aiData.urgency || prevQual.urgency || "Medium",
-        interestScore: aiData.interestScore ?? prevQual.interestScore ?? 0,
-      };
-
-      const validServices = [
-        "Grooming",
-        "Training",
-        "Walking",
-        "Pet Sitting",
-        "Pet Insurance",
-        "Job Inquiry",
-        "Cow Services",
-        "General Enquiry",
-      ];
-      const rawIntent = aiData.intent || "";
-
-      let matchedService = validServices.find(
-        (s) => s.toLowerCase() === rawIntent.toLowerCase(),
-      );
-      if (!matchedService) {
-        const combinedText = `${rawIntent} ${incomingText}`.toLowerCase();
-        if (combinedText.includes("groom")) matchedService = "Grooming";
-        else if (combinedText.includes("train")) matchedService = "Training";
-        else if (combinedText.includes("walk")) matchedService = "Walking";
-        else if (combinedText.includes("sit")) matchedService = "Pet Sitting";
-        else if (combinedText.includes("insur"))
-          matchedService = "Pet Insurance";
-        else if (
-          combinedText.includes("job") ||
-          combinedText.includes("work") ||
-          combinedText.includes("provider") ||
-          combinedText.includes("partner")
-        )
-          matchedService = "Job Inquiry";
-        else if (
-          combinedText.includes("cow") ||
-          combinedText.includes("cattle")
-        )
-          matchedService = "Cow Services";
-      }
-
-      if (matchedService) {
-        if (!lead.services || !lead.services.includes(matchedService)) {
-          updatePayload.services = [...(lead.services || []), matchedService];
-        }
-      }
-
-      const resolvedCity = aiData.city || prevQual.city;
-      if (resolvedCity) updatePayload.city = resolvedCity;
-    }
-
-    if (parsed.tags && parsed.tags.length > 0) {
-      const currentTags = lead.aiTags || [];
-      const newTags = new Set([...currentTags, ...parsed.tags]);
-      updatePayload.aiTags = Array.from(newTags);
-    }
-
-    if (parsed.summary) updatePayload.conversationSummary = parsed.summary;
-    if (parsed.sentiment) updatePayload.sentiment = parsed.sentiment;
-    if (parsed.probabilityOfConversion)
-      updatePayload.probabilityOfConversion = parsed.probabilityOfConversion;
-    if (parsed.nextAction) updatePayload.nextAction = parsed.nextAction;
-
-    if (parsed.disableAI) {
-      updatePayload.aiEnabled = false;
-      await Notification.create({
-        title: "AI Disabled - Human Takeover Needed",
-        message: `AI has been disabled for ${lead.name} (${lead.phone}) because they requested human support or the AI reached its limit.`,
-        type: "lead_update",
-        targetRoles: ["sales manager", "sales person"],
-      });
-    }
-
-    await Lead.findByIdAndUpdate(leadId, updatePayload);
-
-    if (
-      parsed.triggerActions?.createFollowUp &&
-      parsed.triggerActions?.followUpDate
-    ) {
-      const existingFollowUp = await Followup.findOne({
-        leadId,
-        date: parsed.triggerActions.followUpDate,
-      });
-
-      if (!existingFollowUp) {
-        await Followup.create({
-          leadId,
-          leadName: lead.name,
-          type: "WhatsApp",
-          date: parsed.triggerActions.followUpDate,
-          time: "10:00 AM",
-          priority:
-            parsed.qualification?.urgency === "High" ? "High" : "Medium",
-          notes:
-            parsed.triggerActions.followUpNotes ||
-            "Follow-up scheduled by AI Agent",
-          author: "AI Agent",
-        });
-
-        await Notification.create({
-          title: "Followup Created by AI",
-          message: `AI Agent created a follow-up task for lead ${lead.name} on ${parsed.triggerActions.followUpDate}.`,
-          type: "lead_update",
-          targetRoles: ["sales manager", "sales person"],
-        });
-      }
-    }
-
-    if (parsed.triggerActions?.addNote) {
-      await Lead.findByIdAndUpdate(leadId, {
-        $set: {
-          notes:
-            (lead.notes || "") +
-            "\n\n[AI Note]: " +
-            parsed.triggerActions.addNote,
-        },
-      });
-    }
+    await saveExtractedLeadData(
+      lead,
+      parsed,
+      incomingText,
+      systemPrompt + "\n\nUser Message: " + incomingText,
+      "openrouter/auto (OpenRouter + Qdrant)",
+    );
 
     return (
       parsed.reply ||
@@ -548,5 +524,273 @@ CRITICAL RULES:
   } catch (error) {
     console.error("Error in AI Service generateAIResponse:", error);
     return "I'm sorry, but I'm unable to assist with this request right now. I'll connect you with one of our team members, who will continue assisting you shortly.";
+  }
+};
+
+/**
+ * Shared helper to apply structured extraction updates to the Lead document,
+ * create follow-ups, append notes, and log AI activity.
+ */
+export const saveExtractedLeadData = async (
+  lead,
+  parsed,
+  incomingText,
+  promptText,
+  modelName = "gemini-3.1-flash-lite",
+) => {
+  const leadId = lead._id;
+
+  await AILog.create({
+    leadId,
+    prompt: promptText,
+    response: JSON.stringify(parsed, null, 2),
+    model: modelName,
+    tokensUsed: 0,
+  });
+
+  const updatePayload = {};
+
+  if (parsed.qualification) {
+    const aiData = parsed.qualification || {};
+    const prevQual = lead.aiQualification || {};
+
+    updatePayload.lastMessage = incomingText;
+    updatePayload.lastActivity = new Date();
+    updatePayload.aiQualification = {
+      petType: aiData.petType || prevQual.petType || "",
+      breed: aiData.breed || prevQual.breed || "",
+      petAge: aiData.petAge || prevQual.petAge || "",
+      city: aiData.city || prevQual.city || "",
+      intent: aiData.intent || prevQual.intent || "",
+      specialRequirements:
+        aiData.specialRequirements || prevQual.specialRequirements || "",
+      urgency: aiData.urgency || prevQual.urgency || "Medium",
+      interestScore: aiData.interestScore ?? prevQual.interestScore ?? 0,
+    };
+
+    const validServices = [
+      "Grooming",
+      "Training",
+      "Walking",
+      "Pet Sitting",
+      "Pet Insurance",
+      "Job Inquiry",
+      "Cow Services",
+      "General Enquiry",
+    ];
+    const rawIntent = aiData.intent || "";
+
+    let matchedService = validServices.find(
+      (s) => s.toLowerCase() === rawIntent.toLowerCase(),
+    );
+    if (!matchedService) {
+      const combinedText = `${rawIntent} ${incomingText}`.toLowerCase();
+      if (combinedText.includes("groom")) matchedService = "Grooming";
+      else if (combinedText.includes("train")) matchedService = "Training";
+      else if (combinedText.includes("walk")) matchedService = "Walking";
+      else if (combinedText.includes("sit")) matchedService = "Pet Sitting";
+      else if (combinedText.includes("insur")) matchedService = "Pet Insurance";
+      else if (
+        combinedText.includes("job") ||
+        combinedText.includes("work") ||
+        combinedText.includes("provider") ||
+        combinedText.includes("partner")
+      )
+        matchedService = "Job Inquiry";
+      else if (
+        combinedText.includes("cow") ||
+        combinedText.includes("cattle")
+      )
+        matchedService = "Cow Services";
+    }
+
+    if (matchedService) {
+      if (!lead.services || !lead.services.includes(matchedService)) {
+        updatePayload.services = [...(lead.services || []), matchedService];
+      }
+    }
+
+    const resolvedCity = aiData.city || prevQual.city;
+    if (resolvedCity) updatePayload.city = resolvedCity;
+  }
+
+  if (parsed.tags && parsed.tags.length > 0) {
+    const currentTags = lead.aiTags || [];
+    const newTags = new Set([...currentTags, ...parsed.tags]);
+    updatePayload.aiTags = Array.from(newTags);
+  }
+
+  if (parsed.summary) updatePayload.conversationSummary = parsed.summary;
+  if (parsed.sentiment) updatePayload.sentiment = parsed.sentiment;
+  if (parsed.probabilityOfConversion)
+    updatePayload.probabilityOfConversion = parsed.probabilityOfConversion;
+  if (parsed.nextAction) updatePayload.nextAction = parsed.nextAction;
+
+  if (parsed.disableAI) {
+    updatePayload.aiEnabled = false;
+    await Notification.create({
+      title: "AI Disabled - Human Takeover Needed",
+      message: `AI has been disabled for ${lead.name} (${lead.phone}) because they requested human support or the AI reached its limit.`,
+      type: "lead_update",
+      targetRoles: ["sales manager", "sales person"],
+    });
+  }
+
+  const updatedLead = await Lead.findByIdAndUpdate(leadId, updatePayload, {
+    new: true,
+  });
+
+  if (
+    parsed.triggerActions?.createFollowUp &&
+    parsed.triggerActions?.followUpDate
+  ) {
+    const existingFollowUp = await Followup.findOne({
+      leadId,
+      date: parsed.triggerActions.followUpDate,
+    });
+
+    if (!existingFollowUp) {
+      await Followup.create({
+        leadId,
+        leadName: lead.name,
+        type: "WhatsApp",
+        date: parsed.triggerActions.followUpDate,
+        time: "10:00 AM",
+        priority:
+          parsed.qualification?.urgency === "High" ? "High" : "Medium",
+        notes:
+          parsed.triggerActions.followUpNotes ||
+          "Follow-up scheduled by AI Agent",
+        author: "AI Agent",
+      });
+
+      await Notification.create({
+        title: "Followup Created by AI",
+        message: `AI Agent created a follow-up task for lead ${lead.name} on ${parsed.triggerActions.followUpDate}.`,
+        type: "lead_update",
+        targetRoles: ["sales manager", "sales person"],
+      });
+    }
+  }
+
+  if (parsed.triggerActions?.addNote) {
+    await Lead.findByIdAndUpdate(leadId, {
+      $set: {
+        notes:
+          (lead.notes || "") +
+          "\n\n[AI Note]: " +
+          parsed.triggerActions.addNote,
+      },
+    });
+  }
+
+  return updatedLead;
+};
+
+/**
+ * Silent AI Lead Data Extraction
+ * Extracts structured lead data from the customer's message and chat history,
+ * saves all extracted fields to the database, but DOES NOT generate any user reply.
+ */
+export const extractAndStoreLeadData = async (leadId, incomingText) => {
+  try {
+    const lead = await Lead.findById(leadId);
+    if (!lead) {
+      console.warn(`[AI EXTRACTION] Lead not found with ID: ${leadId}`);
+      return null;
+    }
+
+    const assignedRep = await autoAssignRepresentative(lead);
+
+    const modelGeminiPrimary = new ChatGoogleGenerativeAI({
+      model: "gemini-3.1-flash-lite",
+      temperature: 0,
+      maxOutputTokens: 1000,
+      apiKey: process.env.GEMINI_API_KEY,
+    });
+
+    // History
+    const historyDocs = await Message.find({ leadId })
+      .sort({ timestamp: -1 })
+      .limit(8);
+    const history = historyDocs.reverse();
+    const formattedHistory = history.map((msg) => ({
+      role: msg.direction === "incoming" ? "user" : "model",
+      text: msg.text,
+    }));
+    const chatHistoryLog = formattedHistory
+      .map((h) => `${h.role === "user" ? "Customer" : "Representative"}: ${h.text}`)
+      .join("\n");
+
+    const extractionPrompt = `You are a specialized CRM lead data extraction agent for Petsfolio.
+Analyze the customer's incoming message and conversation history, and extract structured data to update our CRM records.
+DO NOT generate any chat reply for the customer. Strictly extract the fields according to the schema.
+
+LEAD CONTEXT:
+Name: ${lead.name} | Phone: ${lead.phone} | Assigned Rep: ${assignedRep}
+Current Services: ${(lead.services && lead.services.join(", ")) || "None"}
+Current Intent: ${lead.aiQualification?.intent || "None"}
+Current City: ${lead.city || lead.aiQualification?.city || "None"}
+Current Pet Type: ${lead.aiQualification?.petType || "None"}
+Current Breed: ${lead.aiQualification?.breed || "None"}
+
+CONVERSATION HISTORY:
+${chatHistoryLog || "(None)"}
+
+LATEST CUSTOMER MESSAGE:
+"${incomingText}"
+
+EXTRACTION RULES:
+1. Passive Extraction: Extract 'Pet Type' (Dog, Cat, etc.), 'Breed', 'Pet Age', 'City'/'Locality', and 'Intent' (service needed) from the message and history.
+2. Valid Services: Grooming, Training, Walking, Pet Sitting, Pet Insurance, Job Inquiry, Cow Services, General Enquiry.
+3. Special Requirements: Note any mentions of aggression, allergies, vaccinations, specific dates, or special handling.
+4. Follow-up: If the customer asks for a callback or specifies when to reach out, set createFollowUp=true with followUpDate and followUpNotes.
+5. Accuracy: If a field is not mentioned or cannot be inferred, leave it as empty string. Do not hallucinate details.
+6. Output: Respond purely via the structured JSON schema.`;
+
+    let parsed = null;
+    try {
+      const structuredModel =
+        modelGeminiPrimary.withStructuredOutput(leadExtractionSchema);
+      parsed = await structuredModel.invoke([
+        ["system", extractionPrompt],
+        ["user", incomingText],
+      ]);
+      console.log(
+        `[AI EXTRACTION] Successfully extracted lead data for ${lead.name} (${lead.phone})`,
+      );
+    } catch (e) {
+      console.warn("[AI EXTRACTION] Gemini extraction failed:", e.message);
+    }
+
+    if (!parsed) {
+      parsed = {
+        qualification: {},
+        tags: [],
+        summary: incomingText.substring(0, 100),
+        sentiment: "Neutral",
+        probabilityOfConversion: 50,
+        nextAction: "Review lead manually",
+        triggerActions: {
+          createFollowUp: false,
+          followUpNotes: "",
+          followUpDate: "",
+          addNote: "",
+        },
+      };
+    }
+
+    const updatedLead = await saveExtractedLeadData(
+      lead,
+      parsed,
+      incomingText,
+      extractionPrompt + "\n\nUser Message: " + incomingText,
+      "gemini-3.1-flash-lite (silent extraction)",
+    );
+
+    return updatedLead;
+  } catch (err) {
+    console.error("Error in extractAndStoreLeadData:", err);
+    return null;
   }
 };

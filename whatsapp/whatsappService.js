@@ -19,7 +19,18 @@ import AssignmentState from "../models/AssignmentState.js";
 import Notification from "../models/Notification.js";
 
 import { getIO } from "../socket/socket.js";
-import { generateAIResponse } from "../ai/aiService.js";
+import { generateAIResponse, extractAndStoreLeadData } from "../ai/aiService.js";
+
+// AI Chat Automation Controls
+let runtimeAIChatsDisabled =
+  process.env.DISABLE_AI_CHATS === "true" ||
+  process.env.AI_AUTO_REPLY_ENABLED === "false";
+
+export const isAIChatDisabled = () => runtimeAIChatsDisabled;
+export const setAIChatDisabled = (val) => {
+  runtimeAIChatsDisabled = Boolean(val);
+  console.log(`[AI CONTROL] AI WhatsApp chat replies set to ${!runtimeAIChatsDisabled ? "ENABLED" : "DISABLED (Extraction Only)"}`);
+};
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -588,9 +599,11 @@ const handleIncomingOrOutgoingMessage = async (msg, sessionId, fromMe) => {
       `[DEBUG] Successfully processed and broadcasted message to lead ID: ${lead._id}`,
     );
 
-    // 6. Asynchronously trigger AI agent response with 4-second debounce
-    if (!isFromMe && lead.aiEnabled) {
-      console.log(`[DEBUG] Queueing AI auto-reply for lead ID: ${lead._id}`);
+    // 6. Asynchronously trigger AI agent processing with 4-second debounce
+    if (!isFromMe && (lead.aiEnabled || isAIChatDisabled())) {
+      console.log(
+        `[DEBUG] Queueing AI processing (${isAIChatDisabled() ? "silent extraction" : "auto-reply"}) for lead ID: ${lead._id}`,
+      );
       triggerAIDebounced(lead, remoteJid, textContent, sessionId);
     }
   } catch (error) {
@@ -713,6 +726,28 @@ const triggerAIDebounced = (lead, remoteJid, incomingText, sessionId) => {
  */
 const processAIResponse = async (lead, remoteJid, incomingText, sessionId) => {
   try {
+    // If AI chats are temporarily disabled, perform passive data extraction ONLY and skip WhatsApp reply
+    if (isAIChatDisabled()) {
+      console.log(
+        `[AI EXTRACTION ONLY] AI chats are disabled. Extracting lead data for ${lead.name} (${lead.phone}) without sending reply.`,
+      );
+      const updatedLead = await extractAndStoreLeadData(lead._id, incomingText);
+
+      // Broadcast updated lead data to frontend over Socket.io
+      const io = getIO();
+      if (io && updatedLead) {
+        io.to(lead._id.toString()).emit("conversation_updated", {
+          leadId: lead._id,
+          lead: updatedLead,
+        });
+        io.emit("conversation_updated", {
+          leadId: lead._id,
+          lead: updatedLead,
+        });
+      }
+      return;
+    }
+
     // Emit typing status over socket.io
     const io = getIO();
     if (io) {

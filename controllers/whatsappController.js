@@ -8,6 +8,8 @@ import {
   logoutWhatsApp,
   getWhatsAppStatus,
   sendMessageFromCRM,
+  isAIChatDisabled,
+  setAIChatDisabled,
 } from "../whatsapp/whatsappService.js";
 // @desc    Connect WhatsApp (starts Baileys client initialization)
 // @route   POST /api/whatsapp/connect
@@ -337,5 +339,39 @@ export const getTestAIHistory = async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 };
+
+// @desc    Get global AI chat status (auto-reply vs silent extraction)
+// @route   GET /api/whatsapp/ai/global-status
+// @access  Public
+export const getGlobalAIStatus = (req, res) => {
+  const disabled = isAIChatDisabled();
+  res.status(200).json({
+    disableAIChats: disabled,
+    mode: disabled ? "extraction_only" : "full_auto_reply",
+    message: disabled
+      ? "AI chat replies are currently disabled. Incoming lead data is extracted and stored silently."
+      : "AI chat replies are currently enabled.",
+  });
+};
+
+// @desc    Toggle global AI chat responses
+// @route   POST /api/whatsapp/ai/global-toggle
+// @access  Public
+export const toggleGlobalAIChats = (req, res) => {
+  const { disableAIChats } = req.body;
+  if (disableAIChats !== undefined) {
+    setAIChatDisabled(Boolean(disableAIChats));
+  } else {
+    setAIChatDisabled(!isAIChatDisabled());
+  }
+
+  const currentStatus = isAIChatDisabled();
+  res.status(200).json({
+    message: `Global AI chat replies ${currentStatus ? "disabled (Silent Extraction Only)" : "enabled"}`,
+    disableAIChats: currentStatus,
+    mode: currentStatus ? "extraction_only" : "full_auto_reply",
+  });
+};
+
 
 
