@@ -1,4 +1,7 @@
 import Lead from "../models/Lead.js";
+import User from "../models/User.js";
+import AssignmentState from "../models/AssignmentState.js";
+import Notification from "../models/Notification.js";
 import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import KnowledgeBase from "../models/KnowledgeBase.js";
@@ -397,6 +400,9 @@ export const sendAgreementPDF = async (req, res) => {
       name,
       fileName,
       service,
+      assignedTo,
+      status,
+      source,
       senderName,
       sessionId,
       leadId,
@@ -473,13 +479,117 @@ export const sendAgreementPDF = async (req, res) => {
             ? [service]
             : ["General Enquiry"];
 
+        // Determine assignment via round-robin if not explicitly specified
+        let finalAssignedTo = assignedTo;
+        if (!finalAssignedTo || finalAssignedTo === "Unassigned") {
+          const reps = await User.find({ role: "sales person" }).sort({ _id: 1 });
+          if (reps && reps.length > 0) {
+            let state = await AssignmentState.findOne({ key: "leadAssignment" });
+            if (!state) {
+              state = await AssignmentState.create({
+                key: "leadAssignment",
+                lastAssignedIndex: -1,
+              });
+            }
+
+            let nextIndex = state.lastAssignedIndex + 1;
+            if (nextIndex >= reps.length) {
+              nextIndex = 0;
+            }
+
+            finalAssignedTo = reps[nextIndex].name;
+            state.lastAssignedIndex = nextIndex;
+            await state.save();
+          } else {
+            finalAssignedTo = "Unassigned";
+          }
+        }
+
+        const validStatuses = [
+          "New",
+          "Follow Up",
+          "Not Interested",
+          "Not Responding",
+          "Not Attended",
+          "Price Issue",
+          "Joined",
+          "Job Posted",
+          "Job Assigned",
+          "Active",
+          "Closed Won",
+          "Policy Active",
+        ];
+        // Default status is "Joined" as required
+        const finalStatus =
+          status && validStatuses.includes(status) ? status : "Joined";
+
         lead = await Lead.create({
           name: name ? name.trim() : "Valued Customer",
           phone: cleanPhone,
-          source: "WhatsApp",
+          source: source || "WhatsApp",
           services: assignedService,
-          status: "New",
+          assignedTo: finalAssignedTo,
+          status: finalStatus,
+          joinedAt: finalStatus === "Joined" ? new Date() : undefined,
         });
+
+        // Notify sales person and manager of lead capture and assignment
+        if (finalAssignedTo && finalAssignedTo !== "Unassigned") {
+          try {
+            const assignedAgent = await User.findOne({ name: finalAssignedTo });
+            const targetUsers = assignedAgent ? [assignedAgent._id] : [];
+            await Notification.create({
+              title: "New Agreement Lead Captured",
+              message: `New agreement lead captured for ${lead.name} (${lead.phone}) and assigned to ${finalAssignedTo}.`,
+              type: "new_lead",
+              targetRoles: ["sales manager"],
+              targetUsers: targetUsers,
+            });
+          } catch (notifErr) {
+            console.error("Failed to create lead notification:", notifErr);
+          }
+        }
+      } else {
+        // If lead already exists: assign if unassigned or explicitly specified
+        let shouldSave = false;
+
+        if (assignedTo && assignedTo !== lead.assignedTo) {
+          lead.assignedTo = assignedTo;
+          shouldSave = true;
+        } else if (!lead.assignedTo || lead.assignedTo === "Unassigned") {
+          const reps = await User.find({ role: "sales person" }).sort({ _id: 1 });
+          if (reps && reps.length > 0) {
+            let state = await AssignmentState.findOne({ key: "leadAssignment" });
+            if (!state) {
+              state = await AssignmentState.create({
+                key: "leadAssignment",
+                lastAssignedIndex: -1,
+              });
+            }
+
+            let nextIndex = state.lastAssignedIndex + 1;
+            if (nextIndex >= reps.length) {
+              nextIndex = 0;
+            }
+
+            lead.assignedTo = reps[nextIndex].name;
+            state.lastAssignedIndex = nextIndex;
+            await state.save();
+            shouldSave = true;
+          }
+        }
+
+        if (status && status !== lead.status) {
+          lead.status = status;
+          if (status === "Joined" && !lead.joinedAt) {
+            lead.joinedAt = new Date();
+          }
+          shouldSave = true;
+        }
+
+        if (shouldSave) {
+          await lead.save();
+        }
       }
     }
 
@@ -593,6 +703,8 @@ export const sendAgreementPDF = async (req, res) => {
         fileName: result.safeFileName,
         mediaUrl: mediaUrl,
         caption: accompanyingText,
+        assignedTo: lead.assignedTo,
+        status: lead.status,
         sentAt: result.timestamp,
       },
     });

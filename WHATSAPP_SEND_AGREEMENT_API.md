@@ -16,7 +16,7 @@ This API endpoint allows external websites, backend servers, and webhooks to sen
 
 1. **New Leads ("Even if he is not there")**:
    - The recipient does **not** need to have messaged your WhatsApp account previously.
-   - The phone number does **not** need to be saved in CRM beforehand. If it's a new number, the system automatically registers the lead and tracks the message.
+   - The phone number does **not** need to be saved in CRM beforehand. If it's a new number, the system automatically registers the lead with default status **`Joined`** and auto-assigns the lead to an active sales representative via round-robin.
 2. **Strict WhatsApp Registration Verification**:
    - Before attempting to send, the server queries WhatsApp servers using `sock.onWhatsApp(phone)`.
    - If the number is **not registered on WhatsApp**, the request is immediately rejected with HTTP `400` (`NOT_ON_WHATSAPP`) before any messages or files are stored.
@@ -38,6 +38,9 @@ You only need to pass **`number`** and **`document`**. Everything else is option
 | `document` | `string` | **YES** | Public URL of the agreement PDF on your website (e.g. `"https://yourwebsite.com/agreements/agreement_123.pdf"`). |
 | `text` / `caption` | `string` | Optional | Accompanying text message (defaults to a friendly agreement message if omitted). |
 | `name` | `string` | Optional | Recipient name (defaults to `"Valued Customer"`). |
+| `status` | `string` | Optional | Lead status (defaults to **`"Joined"`** for agreement leads). |
+| `assignedTo` | `string` | Optional | Name of sales rep to assign to (defaults to round-robin auto-assignment across active sales reps). |
+| `service` | `string` | Optional | Lead service (e.g., `"Grooming"`, `"Training"`, `"Walking"`). Defaults to `"General Enquiry"`. |
 | `fileName` | `string` | Optional | Filename displayed in WhatsApp (defaults to `"Petsfolio_Agreement.pdf"`). |
 | `leadId` | `string` | Optional | Not needed. Only pass if linking to an existing CRM lead explicitly. |
 

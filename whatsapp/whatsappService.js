@@ -1099,6 +1099,16 @@ export const sendPDFAgreement = async ({
     });
   }
 
+  // Update lead's lastMessage and lastActivity
+  try {
+    await Lead.findByIdAndUpdate(lead._id, {
+      lastMessage: conversationSummary,
+      lastActivity: timestamp,
+    });
+  } catch (updateErr) {
+    console.error("Failed to update lead last activity:", updateErr);
+  }
+
   return {
     messageRecord,
     targetJid,
