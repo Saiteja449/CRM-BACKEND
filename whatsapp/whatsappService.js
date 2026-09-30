@@ -989,3 +989,123 @@ export const sendAutomatedFollowup = async (lead, imageUrl, text) => {
 
   return messageRecord;
 };
+
+/**
+ * Send an agreement PDF document with text/caption to a lead over WhatsApp.
+ * Supports direct phone outreach even if the lead is not in CRM or has never messaged.
+ */
+export const sendPDFAgreement = async ({
+  lead,
+  phone,
+  pdfBuffer,
+  fileName = "Petsfolio_Agreement.pdf",
+  text = "",
+  mediaUrl = "",
+  senderName = "Petsfolio Sales",
+  sessionId,
+}) => {
+  let sock;
+  if (sessionId && sessions[sessionId]?.status === "connected") {
+    sock = sessions[sessionId].sock;
+  } else {
+    sock = Object.values(sessions).find((s) => s.status === "connected")?.sock;
+  }
+
+  if (!sock) {
+    throw new Error("WhatsApp client is not connected! Please connect WhatsApp session before sending.");
+  }
+
+  const rawPhone = (lead?.phone || phone || "").toString();
+  let cleanPhone = rawPhone.replace(/\D/g, "");
+  if (cleanPhone.length === 10) {
+    cleanPhone = "91" + cleanPhone;
+  } else if (cleanPhone.length === 11 && cleanPhone.startsWith("0")) {
+    cleanPhone = "91" + cleanPhone.slice(1);
+  }
+
+  if (!cleanPhone || cleanPhone.length < 10) {
+    throw new Error("Invalid phone number provided for WhatsApp dispatch.");
+  }
+
+  // Strict verification: Check if the number is registered on WhatsApp
+  const waCheck = await sock.onWhatsApp(cleanPhone);
+  const contact = Array.isArray(waCheck) ? waCheck.find((c) => c.exists) : null;
+
+  if (!contact || !contact.exists) {
+    const error = new Error(
+      `The phone number +${cleanPhone} is not registered on WhatsApp.`
+    );
+    error.code = "NOT_ON_WHATSAPP";
+    error.phone = cleanPhone;
+    throw error;
+  }
+
+  // Use the verified WhatsApp JID returned by WhatsApp servers
+  const targetJid = contact.jid || `${cleanPhone}@s.whatsapp.net`;
+
+
+  const safeFileName = fileName.toLowerCase().endsWith(".pdf")
+    ? fileName
+    : `${fileName}.pdf`;
+
+  // Dispatch document with Baileys
+  const sendResult = await sock.sendMessage(targetJid, {
+    document: pdfBuffer,
+    mimetype: "application/pdf",
+    fileName: safeFileName,
+    caption: text || "",
+  });
+
+  const messageId = sendResult?.key?.id || `doc_${Date.now()}`;
+  const timestamp = new Date();
+
+  // Create message record
+  const messageRecord = await Message.create({
+    messageId,
+    leadId: lead._id,
+    sender: "petsfolio user",
+    senderName,
+    direction: "outgoing",
+    messageType: "document",
+    mediaUrl: mediaUrl || "",
+    text: text || safeFileName,
+    timestamp,
+    aiGenerated: false,
+    delivered: true,
+    read: false,
+    status: "sent",
+  });
+
+  // Upsert Conversation details so conversation appears in CRM even if this is the first contact
+  const conversationSummary = text ? `📄 ${text}` : `📄 ${safeFileName}`;
+  await Conversation.findOneAndUpdate(
+    { leadId: lead._id },
+    {
+      lastMessage: conversationSummary,
+      lastMessageTime: timestamp,
+      unreadCount: 0,
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  // Emit socket updates
+  const io = getIO();
+  if (io) {
+    io.to(lead._id.toString()).emit("new_message", messageRecord);
+    io.emit("conversation_updated", {
+      leadId: lead._id,
+      lastMessage: conversationSummary,
+      lastMessageTime: timestamp,
+    });
+  }
+
+  return {
+    messageRecord,
+    targetJid,
+    cleanPhone,
+    messageId,
+    safeFileName,
+    timestamp,
+  };
+};
+

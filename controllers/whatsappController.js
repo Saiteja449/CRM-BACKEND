@@ -3,14 +3,23 @@ import Message from "../models/Message.js";
 import Conversation from "../models/Conversation.js";
 import KnowledgeBase from "../models/KnowledgeBase.js";
 import WhatsAppSession from "../models/WhatsAppSession.js";
+import axios from "axios";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import {
   connectWhatsApp,
   logoutWhatsApp,
   getWhatsAppStatus,
   sendMessageFromCRM,
+  sendPDFAgreement,
   isAIChatDisabled,
   setAIChatDisabled,
 } from "../whatsapp/whatsappService.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 // @desc    Connect WhatsApp (starts Baileys client initialization)
 // @route   POST /api/whatsapp/connect
 // @access  Public
@@ -372,6 +381,232 @@ export const toggleGlobalAIChats = (req, res) => {
     mode: currentStatus ? "extraction_only" : "full_auto_reply",
   });
 };
+
+// @desc    Send PDF agreement via WhatsApp to a new lead (even if never messaged before)
+// @route   POST /api/whatsapp/send-agreement
+// @access  Public
+export const sendAgreementPDF = async (req, res) => {
+  try {
+    const {
+      leadId,
+      phone,
+      pdfUrl,
+      text,
+      caption,
+      name,
+      fileName,
+      service,
+      senderName,
+      sessionId,
+    } = req.body;
+
+    const accompanyingText = (text || caption || "").trim();
+
+    // 1. Identify or create the lead
+    let lead = null;
+    let targetPhone = phone;
+
+    if (leadId) {
+      lead = await Lead.findById(leadId);
+      if (!lead && !phone) {
+        return res.status(404).json({
+          success: false,
+          error: "LEAD_NOT_FOUND",
+          message: `Lead with ID ${leadId} not found and no phone number provided.`,
+        });
+      }
+      if (lead) {
+        targetPhone = lead.phone;
+      }
+    }
+
+    if (!targetPhone) {
+      return res.status(400).json({
+        success: false,
+        error: "MISSING_PHONE",
+        message: "Either 'phone' or a valid 'leadId' must be provided.",
+      });
+    }
+
+    // Normalize phone number
+    let cleanPhone = targetPhone.toString().replace(/\D/g, "");
+    if (cleanPhone.length === 10) {
+      cleanPhone = "91" + cleanPhone;
+    } else if (cleanPhone.length === 11 && cleanPhone.startsWith("0")) {
+      cleanPhone = "91" + cleanPhone.slice(1);
+    }
+
+    if (!cleanPhone || cleanPhone.length < 10) {
+      return res.status(400).json({
+        success: false,
+        error: "INVALID_PHONE",
+        message: "A valid phone number with at least 10 digits is required.",
+      });
+    }
+
+    // If lead is not found by ID, look up or create in DB
+    if (!lead) {
+      lead = await Lead.findOne({
+        $or: [
+          { phone: cleanPhone },
+          { phone: cleanPhone.startsWith("91") ? cleanPhone.slice(2) : cleanPhone },
+          { phone: targetPhone },
+        ],
+      });
+
+      if (!lead) {
+        lead = await Lead.create({
+          name: name ? name.trim() : "Valued Customer",
+          phone: cleanPhone,
+          source: "WhatsApp Outreach",
+          services: service ? [service] : ["General Enquiry"],
+          status: "New",
+        });
+      }
+    }
+
+    // 2. Resolve PDF buffer & mediaUrl
+    let pdfBuffer = null;
+    let mediaUrl = "";
+    let resolvedFileName = fileName || "Petsfolio_Agreement.pdf";
+
+    // Case A: Multipart file uploaded
+    if (req.file) {
+      if (
+        req.file.mimetype !== "application/pdf" &&
+        !req.file.originalname.toLowerCase().endsWith(".pdf")
+      ) {
+        return res.status(400).json({
+          success: false,
+          error: "INVALID_DOCUMENT_TYPE",
+          message: "Only PDF documents are allowed.",
+        });
+      }
+
+      pdfBuffer = fs.readFileSync(req.file.path);
+      mediaUrl = `/uploads/agreements/${req.file.filename}`;
+      if (!fileName) {
+        resolvedFileName = req.file.originalname;
+      }
+    }
+    // Case B: PDF URL from other website
+    else if (pdfUrl) {
+      try {
+        const downloadRes = await axios.get(pdfUrl, {
+          responseType: "arraybuffer",
+          timeout: 45000,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) PetsfolioCRM/1.0",
+            Accept: "application/pdf,*/*",
+          },
+        });
+
+        pdfBuffer = Buffer.from(downloadRes.data);
+
+        // Verify PDF magic bytes '%PDF-'
+        const isPdf =
+          pdfBuffer.slice(0, 5).toString() === "%PDF-" ||
+          downloadRes.headers["content-type"]?.includes("pdf") ||
+          pdfUrl.toLowerCase().split("?")[0].endsWith(".pdf");
+
+        if (!isPdf) {
+          return res.status(400).json({
+            success: false,
+            error: "INVALID_PDF",
+            message: "The provided 'pdfUrl' does not point to a valid PDF document.",
+          });
+        }
+
+        // Save local copy to uploads/agreements for CRM archiving
+        const agreementDir = path.join(__dirname, "..", "uploads", "agreements");
+        if (!fs.existsSync(agreementDir)) {
+          fs.mkdirSync(agreementDir, { recursive: true });
+        }
+        const savedName = `agreement_${Date.now()}_${Math.random().toString(36).substring(7)}.pdf`;
+        const savedPath = path.join(agreementDir, savedName);
+        fs.writeFileSync(savedPath, pdfBuffer);
+        mediaUrl = `/uploads/agreements/${savedName}`;
+
+        if (!fileName) {
+          try {
+            const urlPath = new URL(pdfUrl).pathname;
+            const extractedName = path.basename(urlPath);
+            if (extractedName && extractedName.toLowerCase().endsWith(".pdf")) {
+              resolvedFileName = decodeURIComponent(extractedName);
+            }
+          } catch (e) {}
+        }
+      } catch (dlErr) {
+        return res.status(400).json({
+          success: false,
+          error: "PDF_FETCH_FAILED",
+          message: `Failed to download PDF from provided URL (${pdfUrl}): ${dlErr.message}`,
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: "MISSING_PDF",
+        message: "Please provide 'pdfUrl' or upload a PDF file.",
+      });
+    }
+
+    // 3. Dispatch via WhatsApp Baileys
+    const result = await sendPDFAgreement({
+      lead,
+      phone: cleanPhone,
+      pdfBuffer,
+      fileName: resolvedFileName,
+      text: accompanyingText,
+      mediaUrl,
+      senderName: senderName || "Petsfolio Sales",
+      sessionId,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Agreement PDF sent successfully via WhatsApp.",
+      data: {
+        messageId: result.messageId,
+        leadId: lead._id,
+        leadName: lead.name,
+        phone: cleanPhone,
+        whatsappJid: result.targetJid,
+        fileName: result.safeFileName,
+        mediaUrl: mediaUrl,
+        caption: accompanyingText,
+        sentAt: result.timestamp,
+      },
+    });
+  } catch (error) {
+    console.error("sendAgreementPDF error:", error);
+
+    if (error.code === "NOT_ON_WHATSAPP" || error.message.includes("not registered on WhatsApp")) {
+      return res.status(400).json({
+        success: false,
+        error: "NOT_ON_WHATSAPP",
+        phone: error.phone || undefined,
+        message: error.message,
+      });
+    }
+
+    if (error.message.includes("WhatsApp client is not connected")) {
+      return res.status(400).json({
+        success: false,
+        error: "WHATSAPP_DISCONNECTED",
+        message: error.message,
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      error: "DISPATCH_FAILED",
+      message: error.message || "Failed to send agreement via WhatsApp.",
+    });
+  }
+};
+
+
 
 
 
