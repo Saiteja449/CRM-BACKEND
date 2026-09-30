@@ -30,40 +30,47 @@ This API endpoint allows external websites, backend servers, and webhooks to sen
 
 ## Request Parameters
 
-| Field              | Type     | Required    | Description                                                                            |
-| :----------------- | :------- | :---------- | :------------------------------------------------------------------------------------- |
-| `phone`            | `string` | **Yes\***   | Recipient's phone number (e.g. `"9876543210"`, `"+91 98765 43210"`, `"919876543210"`). |
-| `leadId`           | `string` | **Yes\***   | CRM Lead ObjectId (alternative if `phone` is not provided).                            |
-| `pdfUrl`           | `string` | **Yes\*\*** | Publicly accessible URL of the PDF document hosted on your website.                    |
-| `file`             | `binary` | **Yes\*\*** | Direct PDF file upload if sending via `multipart/form-data`.                           |
-| `text` / `caption` | `string` | Optional    | Accompanying text message displayed as the document caption in WhatsApp.               |
-| `name`             | `string` | Optional    | Customer's full name (used if auto-creating lead, defaults to `"Valued Customer"`).    |
-| `fileName`         | `string` | Optional    | The filename shown in WhatsApp (defaults to `"Petsfolio_Agreement.pdf"`).              |
-| `service`          | `string` | Optional    | Service category for lead tracking (e.g. `"Grooming"`, `"Training"`, `"Boarding"`).    |
-| `senderName`       | `string` | Optional    | Name of the sender recorded in CRM (defaults to `"Petsfolio Sales"`).                  |
-| `sessionId`        | `string` | Optional    | Specific WhatsApp device session ID (defaults to active session).                      |
+You only need to pass **`number`** and **`document`**. Everything else is optional:
 
-_\* Either `phone` or `leadId` must be provided._  
-_\*\* Either `pdfUrl` or a `file` upload must be provided._
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `number` | `string` | **YES** | Recipient's phone number (e.g. `"9876543210"`, `"+91 98765 43210"`). Auto-sanitized with country code `91`. |
+| `document` | `string` | **YES** | Public URL of the agreement PDF on your website (e.g. `"https://yourwebsite.com/agreements/agreement_123.pdf"`). |
+| `text` / `caption` | `string` | Optional | Accompanying text message (defaults to a friendly agreement message if omitted). |
+| `name` | `string` | Optional | Recipient name (defaults to `"Valued Customer"`). |
+| `fileName` | `string` | Optional | Filename displayed in WhatsApp (defaults to `"Petsfolio_Agreement.pdf"`). |
+| `leadId` | `string` | Optional | Not needed. Only pass if linking to an existing CRM lead explicitly. |
+
+*(Note: `phone` is also accepted as alias for `number`, and `pdfUrl` is accepted as alias for `document`).*
 
 ---
 
 ## 1. Success Examples
 
-### Example 1: Send External Website PDF via JSON (Recommended)
+### Standard Request (`number`, `document`, and `text`)
 
 ```bash
 curl -X POST "https://holyminicow.com/crm-beta/api/whatsapp/send-agreement" \
   -H "Content-Type: application/json" \
   -d '{
-    "phone": "9876543210",
-    "name": "Rahul Sharma",
-    "pdfUrl": "https://yourwebsite.com/agreements/rahul_agreement_2026.pdf",
-    "fileName": "Petsfolio_Service_Agreement_Rahul.pdf",
-    "text": "Dear Rahul, please find attached the Petsfolio Service Agreement for your pet'\''s grooming session. Kindly review and confirm to proceed. Thank you!",
-    "service": "Grooming"
+    "number": "9876543210",
+    "document": "https://yourwebsite.com/agreements/client_agreement.pdf",
+    "text": "Dear Customer, please find attached your Petsfolio Service Agreement. Kindly review and confirm to proceed. Thank you!"
   }'
 ```
+
+### Minimal Request (Only `number` and `document`, uses default polite text)
+
+```bash
+curl -X POST "https://holyminicow.com/crm-beta/api/whatsapp/send-agreement" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "number": "9876543210",
+    "document": "https://yourwebsite.com/agreements/client_agreement.pdf"
+  }'
+```
+
+
 
 #### Success Response (`200 OK`)
 

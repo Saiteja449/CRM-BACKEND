@@ -388,8 +388,9 @@ export const toggleGlobalAIChats = (req, res) => {
 export const sendAgreementPDF = async (req, res) => {
   try {
     const {
-      leadId,
+      number,
       phone,
+      document,
       pdfUrl,
       text,
       caption,
@@ -398,38 +399,40 @@ export const sendAgreementPDF = async (req, res) => {
       service,
       senderName,
       sessionId,
+      leadId,
     } = req.body;
 
-    const accompanyingText = (text || caption || "").trim();
+    // Primary fields: number and document (with fallback to phone and pdfUrl)
+    const targetPhone = number || phone;
+    const targetPdfUrl = document || pdfUrl;
+
+    const accompanyingText = (
+      text ||
+      caption ||
+      "Dear Customer, please find attached your Petsfolio Service Agreement. Kindly review and let us know if you have any questions. Thank you!"
+    ).trim();
 
     // 1. Identify or create the lead
     let lead = null;
-    let targetPhone = phone;
+    let resolvedPhone = targetPhone;
 
     if (leadId) {
       lead = await Lead.findById(leadId);
-      if (!lead && !phone) {
-        return res.status(404).json({
-          success: false,
-          error: "LEAD_NOT_FOUND",
-          message: `Lead with ID ${leadId} not found and no phone number provided.`,
-        });
-      }
       if (lead) {
-        targetPhone = lead.phone;
+        resolvedPhone = lead.phone;
       }
     }
 
-    if (!targetPhone) {
+    if (!resolvedPhone) {
       return res.status(400).json({
         success: false,
-        error: "MISSING_PHONE",
-        message: "Either 'phone' or a valid 'leadId' must be provided.",
+        error: "MISSING_NUMBER",
+        message: "The 'number' field is required.",
       });
     }
 
     // Normalize phone number
-    let cleanPhone = targetPhone.toString().replace(/\D/g, "");
+    let cleanPhone = resolvedPhone.toString().replace(/\D/g, "");
     if (cleanPhone.length === 10) {
       cleanPhone = "91" + cleanPhone;
     } else if (cleanPhone.length === 11 && cleanPhone.startsWith("0")) {
@@ -445,12 +448,13 @@ export const sendAgreementPDF = async (req, res) => {
     }
 
     // If lead is not found by ID, look up or create in DB
+    // If lead is not found by ID, look up or create in DB
     if (!lead) {
       lead = await Lead.findOne({
         $or: [
           { phone: cleanPhone },
           { phone: cleanPhone.startsWith("91") ? cleanPhone.slice(2) : cleanPhone },
-          { phone: targetPhone },
+          { phone: resolvedPhone },
         ],
       });
 
@@ -490,9 +494,9 @@ export const sendAgreementPDF = async (req, res) => {
       }
     }
     // Case B: PDF URL from other website
-    else if (pdfUrl) {
+    else if (targetPdfUrl) {
       try {
-        const downloadRes = await axios.get(pdfUrl, {
+        const downloadRes = await axios.get(targetPdfUrl, {
           responseType: "arraybuffer",
           timeout: 45000,
           headers: {
@@ -507,13 +511,13 @@ export const sendAgreementPDF = async (req, res) => {
         const isPdf =
           pdfBuffer.slice(0, 5).toString() === "%PDF-" ||
           downloadRes.headers["content-type"]?.includes("pdf") ||
-          pdfUrl.toLowerCase().split("?")[0].endsWith(".pdf");
+          targetPdfUrl.toLowerCase().split("?")[0].endsWith(".pdf");
 
         if (!isPdf) {
           return res.status(400).json({
             success: false,
             error: "INVALID_PDF",
-            message: "The provided 'pdfUrl' does not point to a valid PDF document.",
+            message: "The provided 'document' does not point to a valid PDF document.",
           });
         }
 
@@ -529,7 +533,7 @@ export const sendAgreementPDF = async (req, res) => {
 
         if (!fileName) {
           try {
-            const urlPath = new URL(pdfUrl).pathname;
+            const urlPath = new URL(targetPdfUrl).pathname;
             const extractedName = path.basename(urlPath);
             if (extractedName && extractedName.toLowerCase().endsWith(".pdf")) {
               resolvedFileName = decodeURIComponent(extractedName);
@@ -540,14 +544,14 @@ export const sendAgreementPDF = async (req, res) => {
         return res.status(400).json({
           success: false,
           error: "PDF_FETCH_FAILED",
-          message: `Failed to download PDF from provided URL (${pdfUrl}): ${dlErr.message}`,
+          message: `Failed to download PDF from provided document URL (${targetPdfUrl}): ${dlErr.message}`,
         });
       }
     } else {
       return res.status(400).json({
         success: false,
-        error: "MISSING_PDF",
-        message: "Please provide 'pdfUrl' or upload a PDF file.",
+        error: "MISSING_DOCUMENT",
+        message: "Please provide 'document' (PDF URL) or upload a PDF file.",
       });
     }
 
