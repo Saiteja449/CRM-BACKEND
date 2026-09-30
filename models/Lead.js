@@ -20,6 +20,7 @@ const leadSchema = new mongoose.Schema(
       enum: [
         "Email",
         "WhatsApp",
+        "WhatsApp Outreach",
         "Meta Ads",
         "Website Form",
         "Call",

@@ -85,6 +85,8 @@ export const getPaginatedLeads = async (req, res) => {
         { petName: searchRegex },
         { petBreed: searchRegex },
         { email: searchRegex },
+        { city: searchRegex },
+        { "aiQualification.city": searchRegex },
       ];
     }
 

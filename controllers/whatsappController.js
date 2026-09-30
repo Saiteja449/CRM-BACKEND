@@ -448,7 +448,6 @@ export const sendAgreementPDF = async (req, res) => {
     }
 
     // If lead is not found by ID, look up or create in DB
-    // If lead is not found by ID, look up or create in DB
     if (!lead) {
       lead = await Lead.findOne({
         $or: [
@@ -459,11 +458,26 @@ export const sendAgreementPDF = async (req, res) => {
       });
 
       if (!lead) {
+        const validServices = [
+          "Grooming",
+          "Training",
+          "Walking",
+          "Pet Sitting",
+          "Pet Insurance",
+          "Job Inquiry",
+          "Cow Services",
+          "General Enquiry",
+        ];
+        const assignedService =
+          service && validServices.includes(service)
+            ? [service]
+            : ["General Enquiry"];
+
         lead = await Lead.create({
           name: name ? name.trim() : "Valued Customer",
           phone: cleanPhone,
-          source: "WhatsApp Outreach",
-          services: service ? [service] : ["General Enquiry"],
+          source: "WhatsApp",
+          services: assignedService,
           status: "New",
         });
       }
